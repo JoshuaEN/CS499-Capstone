@@ -1,0 +1,6 @@
+development:
+  adapter: postgresql
+  host: localhost
+  username: postgres
+  password: password
+  database: capstone-dev

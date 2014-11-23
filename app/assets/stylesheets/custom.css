@@ -1,0 +1,92 @@
+body {
+	margin: 0;
+	background: #EDEDED;
+}
+
+.player_settings {
+	width: 50%;
+	float: left;
+}
+
+#content {
+	margin: 20px;
+}
+
+#content > div {
+	float: left;
+}
+
+#actions {
+	float: right;
+}
+
+#sidebar {
+	background: white;
+	border: 1px solid black;
+	margin: 0 5px;
+	padding: 5px;
+	font-family: monospace;
+}
+
+#sidebar > p {
+	margin: 0;
+	margin-bottom: 4px;
+}
+
+#player_settings {
+	padding-top: 10px;
+	clear: both;
+}
+
+.grid {
+	border: 1px solid black;
+	float: left;
+	height: 0;
+	padding: 8px 4px;
+	position: relative;
+}
+
+.grid-text {
+	position: absolute;;
+	top: 0px;
+	left: 0px;
+	margin: 5px;
+}
+
+.disk {
+	border-radius: 50%;
+	border: 1px solid black;
+	padding: calc(50% - .5px) calc(50% - 4px);
+	margin-top: -4px;
+}
+
+.disk_0 {
+	background: black;
+}
+
+.disk_1 {
+	background: white;
+}
+
+.disk_null {
+	border: none;
+}
+
+.link {
+	color: #7E7E7E;
+	cursor: pointer;
+}
+
+.link:hover {
+	color: #2D00D3;
+	text-decoration: underline;
+}
+
+div.form_group {
+	margin-top: 5px;
+}
+
+input {
+	width: auto;
+	margin-top: 5px;
+}

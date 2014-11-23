@@ -1,0 +1,51 @@
+<head>
+	<title>Othello</title>
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+	<script src="http://ajax.googleapis.com/ajax/libs/jqueryui/1.11.2/jquery-ui.min.js"></script>
+	<%= javascript_include_tag 'game_render.js', 
+								'game.js',
+								'ai_game.js',
+								'controllers/human.js',
+								'controllers/ai_first.js',
+								'controllers/ai_minimax.js',
+								'application.js'
+	%>
+	<%= stylesheet_link_tag 'application.css' %>
+</head>
+<body>
+	<div id="content">
+		<div id="main">
+			<div id="game_controls">
+				<span id="current_player"></span>
+				<span id="actions"><span id="game_action_reset" class="link">Reset</span></span>
+			</div>
+			<div id="game_board">
+				
+			</div>
+			<div id="player_settings">
+				<div id="player_settings_0" class="player_settings">
+					<label>
+						Dark
+						<select data-player-selector="0">
+							
+						</select>
+					</label>
+					<div data-player-options="0">
+					</div>
+				</div>
+				<div id="player_settings_1" class="player_settings">
+					<label>
+						Light
+						<select data-player-selector="1">
+							
+						</select>
+					</label>
+					<div data-player-options="1">
+					</div>
+				</div>
+			</div>
+		</div>
+		<div id="sidebar">
+		</div>
+	</div>
+</body>
