@@ -303,7 +303,7 @@ AIMinimaxController.prototype.minimax_async = function(game, depth) {
 			new_maximizing = !!new_maximizing;
 
 			if(this.graph) {
-				graph_points[i] = {
+				this.graph_points[i] = {
 					index: game.valid_moves[i],
 					board: new_game.board.slice(0),
 					maximizing: new_maximizing,
@@ -316,10 +316,10 @@ AIMinimaxController.prototype.minimax_async = function(game, depth) {
 			new_maximizing = !new_maximizing;
 
 			if(this.graph) {
-				graph_points[i] = {
+				this.graph_points[i] = {
 					index: game.valid_moves[i],
 					board: new_game.board.slice(0),
-					maximizing: !maximizing,
+					maximizing: new_maximizing,
 					skipped_turn: false
 				};
 			}
