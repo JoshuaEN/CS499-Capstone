@@ -3,7 +3,7 @@
 var AIBaseController = function(game, player) {
 	BaseController.call(this, game, player);
 
-	this.valid_moves_weights = null;
+	this.valid_move_weights = null;
 	this.best_move_weight = null;
 };
 
@@ -12,10 +12,10 @@ AIBaseController.prototype.constructor = AIBaseController;
 
 
 AIBaseController.prototype.draw_board = function() {
-	if(this.game.game_renderer && this.valid_moves_weights) {
-		for(var i = 0; i < this.valid_moves_weights.length; i++) {
+	if(this.game.game_renderer && this.valid_move_weights) {
+		for(var i = 0; i < this.valid_move_weights.length; i++) {
 			var index = this.game.valid_moves[i];
-			var weight = this.valid_moves_weights[i];
+			var weight = this.valid_move_weights[i];
 
 			if(index === undefined)
 				continue;

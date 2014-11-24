@@ -1,5 +1,8 @@
 <head>
 	<title>Othello</title>
+	<script type="text/javascript">
+		window.BOARD_SIZE = parseInt("<%= params[:board_size] || 8 %>");
+	</script>
 	<script src="http://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
 	<script src="http://ajax.googleapis.com/ajax/libs/jqueryui/1.11.2/jquery-ui.min.js"></script>
 	<%= javascript_include_tag 'game_render.js', 
@@ -15,6 +18,7 @@
 <body>
 	<div id="content">
 		<div id="main">
+			<div id="waiting"></div>
 			<div id="game_controls">
 				<span id="current_player"></span>
 				<span id="actions"><span id="game_action_reset" class="link">Reset</span></span>
@@ -48,4 +52,5 @@
 		<div id="sidebar">
 		</div>
 	</div>
+	<footer>Created by Joshua Neuenhoff for CS499-Capstone</footer>
 </body>

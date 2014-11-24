@@ -57,6 +57,8 @@ GameRender.prototype.setup_renderer = function() {
 	this.main_elm = $("#main");
 	this.inform_elm = $("#sidebar");
 	this.current_player_elm = $("#current_player");
+	this.waiting_elm = $("#waiting");
+	this.form_elms = $(":input");
 
 	// Prevent the board from growing too large.
 	this.main_elm.css("max-width", (this.board_size*70.5) + "px");
@@ -159,7 +161,8 @@ GameRender.prototype.draw = function() {
 
 	this.highlight_valid_moves();
 
-	if(this.game.active_player_controller)
+	// When we're waiting the active player controller doesn't have up to date information.
+	if(this.game.active_player_controller && this.is_waiting == false)
 		this.game.active_player_controller.draw_board();
 
 };
@@ -178,6 +181,9 @@ GameRender.prototype.highlight_valid_moves = function() {
 };
 
 GameRender.prototype.on_grid_click = function(elm, ev) {
+
+	if(this.is_waiting)
+		return;
 
 	var index = parseInt($(elm).attr('data-grid-index'));
 
@@ -232,6 +238,9 @@ GameRender.prototype.highlight_tile = function(x,y,disk,ours) {
 };
 
 GameRender.prototype.on_keypress = function(ev) {
+	if(this.is_waiting)
+		return;
+
 	// Esc
 	if(ev.keyCode == 27) {
 		this.restart();
@@ -253,18 +262,32 @@ GameRender.prototype.handle_events = function(eventName, data) {
 			this.draw();
 	} else if(eventName == 'game.boardadvance') {
 		this.draw_turn_info();
-	} else if(eventName == 'game.turnadvance' || eventName == "game.player.waitforkey") {
+	} else if(eventName == 'game.turnadvance') {// || eventName == "game.player.waitforkey") {
 		this.draw();
 	} else if(eventName == 'game.move.invalid') {
 		this.board_grids[data.index].effect("highlight", {color: this.colors.invalid});
 	} else if(eventName == 'game.tilechanged') {
 		this.board_grid_disks[data.index].attr('class', 'disk disk_'+data.value);
+	} else if(eventName == 'game.player.calculated') {
+		this.waiting(false);
+		this.draw();
+	} else if(eventName == 'game.player.calculating') {
+		this.waiting(true);
+		this.clean_grid();		
 	} else {
 		console.log("Unhandled Event: " + eventName);
 		console.log(data);
 	}
 };
 
-$(function() {
-	window.game = new GameRender(8);
-});
+GameRender.prototype.waiting = function(waiting) {
+	if(waiting) {
+		this.is_waiting = true;
+		this.waiting_elm.show();
+		this.form_elms.prop("disabled", true);
+	} else {
+		this.is_waiting = false;
+		this.waiting_elm.hide();
+		this.form_elms.prop("disabled", false);
+	}
+};

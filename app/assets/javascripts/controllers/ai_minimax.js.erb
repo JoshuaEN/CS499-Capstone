@@ -14,6 +14,9 @@ var AIMinimaxController = function(game, player, depth, original_game, options) 
 
 	this.default_depth = 2;
 	this.depth = depth || this.default_depth;
+	this.default_thread_breakpoint = 4;
+	this.thread_breakpoint = this.default_thread_breakpoint;
+	this.thread_minimax = true;
 
 	var rel_diff_helper = (function(game) {
 		var them = game.other_player(self.player);
@@ -61,10 +64,8 @@ var AIMinimaxController = function(game, player, depth, original_game, options) 
 	}
 
 
-	
-
 	this.get_weight = this.weighting_functions.basic.func;
-
+	this.weighting_function_key = "basic";
 	/*
 	this.max = game.board_size*game.board_size+99;
 	this.min = (game.board_size*game.board_size+99)*-1;
@@ -102,6 +103,7 @@ var AIMinimaxController = function(game, player, depth, original_game, options) 
 	}
 
 	this.tiebreak_method = this.tiebreak_functions.first.func;
+	this.tiebreak_method_key = "first";
 
 	this.pause = true;
 	this.pause_until_key = true;
@@ -124,53 +126,84 @@ AIMinimaxController.prototype.your_move = function() {
 
 	this.play_foward();
 
-	if(this.best_move_index === null || this.best_move_index === undefined)
-		this.best_move = this.game.valid_moves[0];
-	else
-		this.best_move = this.game.valid_moves[this.best_move_index];
+	// if(this.best_move_index === null || this.best_move_index === undefined)
+	// 	this.best_move = this.game.valid_moves[0];
+	// else
+	// 	this.best_move = this.game.valid_moves[this.best_move_index];
 
 
-	this.game.fire('player.calculated', {player: this.player});
+	// this.game.fire('player.calculated', {player: this.player});
+	// if(this.pause && this.pause_until_key) {
+	// 	this.game.fire('player.waitforkey', {player: this.player});
+	// } else {
+	// 	var self = this;
+	// 	if(this.allow_for_render)
+	// 		setTimeout(function() {self.take_best_move()}, 1);
+	// 	else
+	// 		this.take_best_move();
+	// }
+};
+
+AIMinimaxController.prototype.do_move = function() {
 	if(this.pause && this.pause_until_key) {
 		this.game.fire('player.waitforkey', {player: this.player});
 	} else {
-		var self = this;
-		if(this.allow_for_render)
-			setTimeout(function() {self.take_best_move()}, 1);
-		else
-			this.take_best_move();
+		this.take_best_move();
 	}
 };
 
 AIMinimaxController.prototype.play_foward = function() {
 	var depth = (this.depth === undefined || this.depth === null ? this.default_depth : this.depth);
 	this.best_move_index = null;
-	this.minimax(this.game, depth, true);
+
+	// There is a cost with starting a worker that is higher than the actual calculations for smaller depths.
+	if(depth > this.thread_breakpoint && this.thread_minimax)
+		this.minimax_async(this.game, depth);
+	else {
+		this.minimax(this.game, depth, true);
+
+		if(this.best_move_index === null || this.best_move_index === undefined)
+			this.best_move = this.game.valid_moves[0];
+		else
+			this.best_move = this.game.valid_moves[this.best_move_index];
+
+		this.game.fire('player.calculated', {player: this.player});
+
+		this.do_move();
+	}
 };
 
 AIMinimaxController.prototype.minimax = function(game, depth, maximizing) {
-	if(depth === 0 || game.finished()) {
+	if(depth <= 0 || game.finished()) {
 		return this.get_weight_def(game);
 	} 
 
 	var weights = [];
 
 	for(var i = 0; i < game.valid_moves.length; i++) {
-		var new_game = new AIGame(game.board_size);
-		new_game.copy_state(game);
+		var new_game = new Game(game.board_size);
+		//new_game.copy_state(game);
+		new_game.board = game.board.slice(0);
+		new_game.game_state = game.game_state;
+		new_game.active_player = game.active_player;
 		new_game.player_controllers = [
-			new AIMinimaxController(new_game, 0, depth-1, this.original_game, {allow_for_render: false}),
-			new AIMinimaxController(new_game, 1, depth-1, this.original_game, {allow_for_render: false})
+			/*new AIMinimaxController(new_game, 0, depth-1, this.original_game, {allow_for_render: false}),
+			new AIMinimaxController(new_game, 1, depth-1, this.original_game, {allow_for_render: false})*/
+			null,
+			null
 		];
-		for(var j = 0; j < new_game.player_controllers.length; j++) {
-			new_game.player_controllers[j].get_weight = this.get_weight;
-			new_game.player_controllers[j].tiebreak_method = this.tiebreak_method;
-		}
-		new_game.active_player_controller = new_game.player_controllers[new_game.active_player];
 		new_game.place_disk(game.valid_moves[i]);
-		new_game.next_turn(true);
+		new_game.advance_board();
+		new_game.game_at_end();
 
-		weights.push(this.minimax(new_game, depth-1, !maximizing));
+		// When we have to skip a turn, we technically are still taking a turn
+		// thus, we decrease the depth by two and send maximizing with the same value as we got it.
+		if(new_game.skip_turn() && game.game_at_end() == false) {
+			new_game.advance_board();
+			weights.push(this.minimax(new_game, depth-2, !!maximizing));
+		}
+		else
+			weights.push(this.minimax(new_game, depth-1, !maximizing));
 	}
 
 	var best_move_indexs = {};
@@ -196,7 +229,7 @@ AIMinimaxController.prototype.minimax = function(game, depth, maximizing) {
 
 	}
 
-	this.valid_moves_weights = weights;
+	this.valid_move_weights = weights;
 	this.best_move_weight = best_weight;
 
 	var move_indexes = best_move_indexs[best_weight];
@@ -205,12 +238,122 @@ AIMinimaxController.prototype.minimax = function(game, depth, maximizing) {
 	return best_weight;
 };
 
+AIMinimaxController.prototype.minimax_async = function(game, depth) {
+	var self = this;
+	var game = this.game;
+	var maximizing = true;
+
+	this.results_queue = [];
+	var results_count = 0;
+	var recieve_message = function(event) {
+		var data = event.data;
+		self.results_queue[data.index] = data.weight;
+		results_count += 1;
+
+		if(results_count != game.valid_moves.length)
+			return;
+
+		var weights = self.results_queue;
+		var max = self.max;
+
+		var best_move_indexs = {};
+		var best_weight;
+
+
+		best_weight = self.min;
+
+		for(var i = 0; i < weights.length; i++) {
+			if((maximizing && weights[i] >= best_weight) ||
+				(!maximizing && weights[i] <= best_weight)) {
+
+				best_weight = weights[i];
+
+
+				if(!best_move_indexs[best_weight])
+					best_move_indexs[best_weight] = [];
+
+				best_move_indexs[best_weight].push(i);
+			}
+
+		}
+
+		self.valid_move_weights = weights;
+		self.best_move_weight = best_weight;
+
+		var move_indexes = best_move_indexs[best_weight];
+
+		self.best_move_index = self.tiebreak_method(move_indexes);
+
+		if(self.best_move_index === null || self.best_move_index === undefined)
+			self.best_move = self.game.valid_moves[0];
+		else
+			self.best_move = self.game.valid_moves[self.best_move_index];
+
+		self.game.fire('player.calculated', {player: self.player});
+
+		self.do_move();
+	};
+
+	for(var i = 0; i < game.valid_moves.length; i++) {
+
+		var new_game = new Game(game.board_size);
+		//new_game.copy_state(game);
+		new_game.board = game.board.slice(0);
+		new_game.game_state = game.game_state;
+		new_game.active_player = game.active_player;
+		new_game.player_controllers = [null,null];
+		new_game.place_disk(game.valid_moves[i]);
+		new_game.advance_board();
+		new_game.game_at_end();
+
+		var new_depth = depth;
+		var new_maximizing = true;
+
+		// When we have to skip a turn, we technically are still taking a turn
+		// thus, we decrease the depth by two and send maximizing with the same value as we got it.
+		if(new_game.skip_turn() && game.game_at_end() == false) {
+			new_game.advance_board();
+			new_depth -= 2;
+			new_maximizing = !!new_maximizing;
+		}
+		else {
+			new_depth -= 1;
+			new_maximizing = !new_maximizing;
+		}
+
+		var worker = new Worker("<%= asset_path "workers/ai_minimax.js" %>");
+		worker.onerror = function(error) {
+			throw error;
+		};
+
+		worker.onmessage = recieve_message;
+		worker.postMessage({
+			game: {
+				board_size: new_game.board_size,
+				board: new_game.board.slice(0),
+				game_state: new_game.game_state,
+				active_player: new_game.active_player
+			},
+			player: {
+				maximizing: new_maximizing,
+				depth: new_depth,
+				number: this.player,
+				weighting_function_key: this.weighting_function_key,
+				tiebreak_method_key: this.tiebreak_method_key
+			},
+			index: i
+		});
+	}
+
+	
+}
+
 AIMinimaxController.prototype.get_weight_def = function(game) {
 	if(game.finished()) {
 		if(game.winner === this.player)
 			return this.max;
 		else if(game.winner === null)
-			return this.min+1; // A draw is considered slightly more favorable to a loss.
+			return 0; // A draw is considered slightly more favorable to a loss.
 		else
 			return this.min;
 	} else {
@@ -250,6 +393,7 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 	weight_method.on("change", function(e) {
 		var func_key = $(this).val();
 		self.get_weight = self.weighting_functions[func_key].func;
+		self.weighting_function_key = func_key;
 		self.recalc();
 	});
 
@@ -270,6 +414,7 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 	tiebreak_method.on("change", function(e) {
 		var func_key = $(this).val();
 		self.tiebreak_method = self.tiebreak_functions[func_key].func;
+		self.tiebreak_method_key = func_key;
 		self.recalc();
 	});
 
@@ -289,7 +434,33 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 
 	pause_until_key = $("<div>", {class: "form_group"}).append(pause_until_key);
 
-	options_container.append(search_depth, weight_method, tiebreak_method, pause_until_key);
+	var thread_minimax = $("<label>").text("Thread Calculations").append(
+		$("<input>", {type: "checkbox"}).prop('checked', this.thread_minimax).on('change', function(){
+			self.thread_minimax = $(this).prop('checked');
+			self.recalc();
+		})
+	);
+
+	var thread_breakpoint =
+		$("<label>").text("Thread if depth > ").append(
+			$("<input>", {value: self.thread_breakpoint, type: "number", min: 1}).on('blur', function(){
+				self.thread_breakpoint = parseInt($(this).val());
+				
+				if(isNaN(self.depth)) {
+					self.thread_breakpoint = self.default_thread_breakpoint;
+				}
+
+				$(this).val(self.thread_breakpoint);
+
+				self.recalc();	
+			})
+		);
+
+	thread_breakpoint = $("<div>", {class: "form_group"}).append(thread_breakpoint);
+
+	pause_until_key = $("<div>", {class: "form_group"}).append(pause_until_key);
+
+	options_container.append(search_depth, weight_method, tiebreak_method, pause_until_key, thread_minimax, thread_breakpoint);
 };
 
 AIMinimaxController.prototype.keypress = function(ev) {

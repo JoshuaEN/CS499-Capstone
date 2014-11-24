@@ -148,6 +148,9 @@ Game.prototype.process_board = function() {
 };
 
 Game.prototype.game_at_end = function() {
+	if(this.game_state == "deadlock")
+		return true;
+	
 	if(this.valid_moves.length > 0)
 		return false;
 

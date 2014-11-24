@@ -1,0 +1,38 @@
+importScripts(
+	"/assets/game.js",
+	"/assets/controllers/ai_minimax.js"
+);
+
+var valid_moves = [];
+var move_weights = [];
+var game;
+var player;
+
+onmessage = function(event) {
+	var data = event.data;
+	var game_data = data.game;
+	var game = new Game(game_data.board_size);
+	game.board = game_data.board;
+	game.game_state = game_data.game_state;
+	game.active_player = game_data.active_player;
+	game.player_controllers = [null,null];
+	game.process_board();
+
+	var player_data = data.player;
+	var player = new AIMinimaxController(game, data.player.number, data.player.depth, game, {allow_for_render: false});
+	player.get_weight = player.weighting_functions[player_data.weighting_function_key].func;
+	player.tiebreak_method = player.tiebreak_functions[player_data.tiebreak_method_key].func;
+
+	player.minimax(game, player.depth, true);
+
+	postMessage({
+		valid_moves: game.valid_moves,
+		valid_move_weights: player.valid_move_weights,
+		best_move_weight: player.best_move_weight,
+		best_move_index: player.best_move_index,
+		index: data.index,
+		weight: player.best_move_weight
+	});
+
+	close();
+}

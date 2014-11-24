@@ -6,14 +6,22 @@ body {
 .player_settings {
 	width: 50%;
 	float: left;
+	min-width: 250px;
+	margin-bottom: 40px;
 }
 
 #content {
-	margin: 20px;
+	margin: 0 20px -20px;
+	min-height: 100%;
 }
 
 #content > div {
 	float: left;
+}
+
+#main {
+	position: relative;
+	padding: 10px 25px;
 }
 
 #actions {
@@ -21,6 +29,7 @@ body {
 }
 
 #sidebar {
+	display: none;
 	background: white;
 	border: 1px solid black;
 	margin: 0 5px;
@@ -89,4 +98,29 @@ div.form_group {
 input {
 	width: auto;
 	margin-top: 5px;
+}
+
+#waiting {
+	display: none;
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.05);
+	z-index: 9999;
+	border: 1px solid black;
+}
+
+html,body {
+	height: 100%;
+}
+
+footer {
+	height: 19px;
+	padding-right: 40px;
+	background: #D8D8D8;
+	border-top: 1px solid #BDBDBD;
+	color: #888;
+	text-align: right;
 }
