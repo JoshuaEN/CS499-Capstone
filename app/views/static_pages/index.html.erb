@@ -14,6 +14,17 @@
 								'application.js'
 	%>
 	<%= stylesheet_link_tag 'application.css' %>
+
+	<script type="text/javascript" src="https://www.google.com/jsapi"></script>
+	<script type="text/javascript">
+		google.load('visualization', '1', {packages: ['orgchart']});
+		google.setOnLoadCallback(function(){
+			window.CHARTS_READY = true;
+			if(window.game) {
+				window.game.draw_graph();
+			}
+		});
+	</script>
 </head>
 <body>
 	<div id="content">
@@ -51,6 +62,8 @@
 		</div>
 		<div id="sidebar">
 		</div>
+		<div style="clear:both;"></div>
+		<div id="graph"></div>
 	</div>
 	<footer>Created by Joshua Neuenhoff for CS499-Capstone</footer>
 </body>

@@ -11,8 +11,15 @@ body {
 }
 
 #content {
-	margin: 0 20px -20px;
+	margin: 0 0 -20px;
 	min-height: 100%;
+}
+
+#content:after {
+	height: 20px;
+	content: "";
+	display: block;
+	clear: both;
 }
 
 #content > div {
@@ -123,4 +130,13 @@ footer {
 	border-top: 1px solid #BDBDBD;
 	color: #888;
 	text-align: right;
+}
+
+.graph-row {
+	font-family: monospace;
+	margin: 0;
+	padding: 0;
+	line-height: 0.4;
+	font-size: 20px;
+	white-space: pre;
 }

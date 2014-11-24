@@ -10,6 +10,11 @@ var AIMinimaxController = function(game, player, depth, original_game, options) 
 	if(this.allow_for_render === undefined)
 		this.allow_for_render = true;
 
+	this.graph = options.graph;
+
+	if(this.graph === undefined)
+		this.graph = false;
+
 	this.original_game = original_game || game;
 
 	this.default_depth = 2;
@@ -160,7 +165,16 @@ AIMinimaxController.prototype.play_foward = function() {
 	if(depth > this.thread_breakpoint && this.thread_minimax)
 		this.minimax_async(this.game, depth);
 	else {
-		this.minimax(this.game, depth, true);
+		var res = this.minimax(this.game, depth, true);
+
+		this.graph_points = {
+			0: {
+				board: this.game.board,
+				weight: res.weight,
+				subtree: res.graph_points,
+				maximizing: true
+			}
+		};
 
 		if(this.best_move_index === null || this.best_move_index === undefined)
 			this.best_move = this.game.valid_moves[0];
@@ -174,8 +188,9 @@ AIMinimaxController.prototype.play_foward = function() {
 };
 
 AIMinimaxController.prototype.minimax = function(game, depth, maximizing) {
+	var graph_points = {};
 	if(depth <= 0 || game.finished()) {
-		return this.get_weight_def(game);
+		return {weight: this.get_weight_def(game), endpoint: true};
 	} 
 
 	var weights = [];
@@ -200,11 +215,38 @@ AIMinimaxController.prototype.minimax = function(game, depth, maximizing) {
 		// thus, we decrease the depth by two and send maximizing with the same value as we got it.
 		if(new_game.skip_turn() && game.game_at_end() == false) {
 			new_game.advance_board();
-			weights.push(this.minimax(new_game, depth-2, !!maximizing));
+			var res = this.minimax(new_game, depth-2, !!maximizing);
+			weights.push(res.weight);
+
+			if(this.graph) {
+				graph_points[i] = {
+					weight: res.weight,
+					index: game.valid_moves[i],
+					board: new_game.board.slice(0),
+					maximizing: !!maximizing,
+					subtree: res.graph_points,
+					skipped_turn: true
+				};
+			}
 		}
-		else
-			weights.push(this.minimax(new_game, depth-1, !maximizing));
+		else {
+			var res = this.minimax(new_game, depth-1, !maximizing)
+			weights.push(res.weight);
+
+			if(this.graph) {
+				graph_points[i] = {
+					weight: res.weight,
+					index: game.valid_moves[i],
+					board: new_game.board.slice(0),
+					maximizing: !maximizing,
+					subtree: res.graph_points,
+					skipped_turn: false
+				};
+			}
+		}
 	}
+
+	//this.graph_points = graph_points;
 
 	var best_move_indexs = {};
 	var best_weight;
@@ -235,7 +277,7 @@ AIMinimaxController.prototype.minimax = function(game, depth, maximizing) {
 	var move_indexes = best_move_indexs[best_weight];
 
 	this.best_move_index = this.tiebreak_method(move_indexes);
-	return best_weight;
+	return {weight: best_weight, graph_points: graph_points};
 };
 
 AIMinimaxController.prototype.minimax_async = function(game, depth) {
@@ -245,9 +287,16 @@ AIMinimaxController.prototype.minimax_async = function(game, depth) {
 
 	this.results_queue = [];
 	var results_count = 0;
+	var graph_points = {};
 	var recieve_message = function(event) {
 		var data = event.data;
 		self.results_queue[data.index] = data.weight;
+
+		if(self.graph) {
+			graph_points[data.index].weight = data.weight;
+			graph_points[data.index].subtree = data.graph_points;
+		}
+
 		results_count += 1;
 
 		if(results_count != game.valid_moves.length)
@@ -284,6 +333,17 @@ AIMinimaxController.prototype.minimax_async = function(game, depth) {
 
 		self.best_move_index = self.tiebreak_method(move_indexes);
 
+		if(self.graph) {
+			self.graph_points = {
+				0: {
+					board: self.game.board,
+					weight: best_weight,
+					subtree: graph_points,
+					maximizing: true
+				}
+			};
+		}
+
 		if(self.best_move_index === null || self.best_move_index === undefined)
 			self.best_move = self.game.valid_moves[0];
 		else
@@ -315,11 +375,32 @@ AIMinimaxController.prototype.minimax_async = function(game, depth) {
 			new_game.advance_board();
 			new_depth -= 2;
 			new_maximizing = !!new_maximizing;
+
+			if(this.graph) {
+				graph_points[i] = {
+					index: game.valid_moves[i],
+					board: new_game.board.slice(0),
+					maximizing: new_maximizing,
+					skipped_turn: true
+				};
+			}
 		}
 		else {
 			new_depth -= 1;
 			new_maximizing = !new_maximizing;
+
+			if(this.graph) {
+				graph_points[i] = {
+					index: game.valid_moves[i],
+					board: new_game.board.slice(0),
+					maximizing: !maximizing,
+					skipped_turn: false
+				};
+			}
 		}
+
+
+			
 
 		var worker = new Worker("<%= asset_path "workers/ai_minimax.js" %>");
 		worker.onerror = function(error) {
@@ -339,7 +420,8 @@ AIMinimaxController.prototype.minimax_async = function(game, depth) {
 				depth: new_depth,
 				number: this.player,
 				weighting_function_key: this.weighting_function_key,
-				tiebreak_method_key: this.tiebreak_method_key
+				tiebreak_method_key: this.tiebreak_method_key,
+				graph: this.graph
 			},
 			index: i
 		});
@@ -441,6 +523,8 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 		})
 	);
 
+	thread_minimax = $("<div>", {class: "form_group"}).append(thread_minimax);
+
 	var thread_breakpoint =
 		$("<label>").text("Thread if depth > ").append(
 			$("<input>", {value: self.thread_breakpoint, type: "number", min: 1}).on('blur', function(){
@@ -458,9 +542,16 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 
 	thread_breakpoint = $("<div>", {class: "form_group"}).append(thread_breakpoint);
 
-	pause_until_key = $("<div>", {class: "form_group"}).append(pause_until_key);
+	var graph = $("<label>").text("Graph Search").append(
+		$("<input>", {type: "checkbox"}).prop('checked', this.graph).on('change', function(){
+			self.graph = $(this).prop('checked');
+			self.recalc();
+		})
+	);
 
-	options_container.append(search_depth, weight_method, tiebreak_method, pause_until_key, thread_minimax, thread_breakpoint);
+	graph = $("<div>", {class: "form_group"}).append(graph);
+
+	options_container.append(search_depth, weight_method, tiebreak_method, pause_until_key, thread_minimax, thread_breakpoint, graph);
 };
 
 AIMinimaxController.prototype.keypress = function(ev) {

@@ -59,6 +59,7 @@ GameRender.prototype.setup_renderer = function() {
 	this.current_player_elm = $("#current_player");
 	this.waiting_elm = $("#waiting");
 	this.form_elms = $(":input");
+	this.graph_paper_elm = $("#graph");
 
 	// Prevent the board from growing too large.
 	this.main_elm.css("max-width", (this.board_size*70.5) + "px");
@@ -162,8 +163,10 @@ GameRender.prototype.draw = function() {
 	this.highlight_valid_moves();
 
 	// When we're waiting the active player controller doesn't have up to date information.
-	if(this.game.active_player_controller && this.is_waiting == false)
+	if(this.game.active_player_controller && this.is_waiting == false) {
 		this.game.active_player_controller.draw_board();
+		this.draw_graph();
+	}
 
 };
 
@@ -179,6 +182,81 @@ GameRender.prototype.highlight_valid_moves = function() {
 		this.board_grids[this.game.valid_moves[i]].css("background", "#C1E2C1");
 	}
 };
+
+GameRender.prototype.draw_graph = function() {
+	var active = this.game.active_player_controller;
+	if(!active.graph_points || !window.CHARTS_READY || !active.graph) {
+		this.graph_paper_elm.empty();
+		return;
+	}
+
+	this.graph_data_list = new google.visualization.DataTable();
+	this.graph_data_list.addColumn('string', 'id');
+	this.graph_data_list.addColumn('string', 'parent');
+	this.graph_data_list.addColumn('string', 'childLabel');
+
+	this.draw_graph_row(active.graph_points, 0, '');
+
+	var options = {
+		allowHtml: true,
+		allowCollapse: false
+	};
+
+	var wordtree = new google.visualization.OrgChart(document.getElementById('graph'));
+	wordtree.draw(this.graph_data_list, options);
+
+	this.graph_data_list = null;
+}
+
+GameRender.prototype.draw_graph_row = function(points, node_id, parent_id) {
+	if(!points)
+		return node_id;
+
+	
+	for(var v in points) {
+		var cur_node = node_id;
+		var point = points[v];
+
+		console.log(cur_node + " | " + point.weight + " | " + parent_id);
+		var formatted;
+
+		if(point.endpoint || !point.subtree) {
+			formatted = '<div style=""><div style="text-align:center;">Endpoint Weight: ' + point.weight + '</div>' + this.stringify_board(point.board, this.game.board_size) + '</div>';
+		} else {
+			formatted = '<div style=""><div style="text-align:center;">('+(point.maximizing ? "Maximizing" : "Minimizing" )+')<br>Best Weight: ' + point.weight + '</div>' + this.stringify_board(point.board, this.game.board_size) + '</div>';
+		}
+
+		this.graph_data_list.addRow([{v:cur_node.toString(), 
+			f:formatted
+		}, parent_id.toString(), point.weight.toString()]);
+
+		node_id += 1;
+
+		node_id = this.draw_graph_row(point.subtree, node_id, cur_node);
+	}
+
+	return node_id;
+};
+
+GameRender.prototype.stringify_board = function(board, board_size) {
+	var div_str = '<div class="graph-row">';
+
+	var str = div_str;
+	for(var i = 0; i < board.length; i++) {
+		if(i%board_size == 0 && i != 0) {
+			str += "</div>" + div_str;
+		}
+
+		if(board[i] === 0)
+			str += "x";
+		else if(board[i] === 1)
+			str += "o";
+		else
+			str += ' ';
+	}
+
+	return str + "</div>";
+}
 
 GameRender.prototype.on_grid_click = function(elm, ev) {
 

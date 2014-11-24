@@ -19,11 +19,11 @@ onmessage = function(event) {
 	game.process_board();
 
 	var player_data = data.player;
-	var player = new AIMinimaxController(game, data.player.number, data.player.depth, game, {allow_for_render: false});
+	var player = new AIMinimaxController(game, data.player.number, data.player.depth, game, {allow_for_render: false, graph: data.player.graph});
 	player.get_weight = player.weighting_functions[player_data.weighting_function_key].func;
 	player.tiebreak_method = player.tiebreak_functions[player_data.tiebreak_method_key].func;
 
-	var max_weight = player.minimax(game, player.depth, true);
+	var res = player.minimax(game, player.depth, false);
 
 	postMessage({
 		valid_moves: game.valid_moves,
@@ -31,7 +31,8 @@ onmessage = function(event) {
 		best_move_weight: player.best_move_weight,
 		best_move_index: player.best_move_index,
 		index: data.index,
-		weight: player.best_move_weight || max_weight
+		weight: player.best_move_weight || res.weight,
+		graph_points: res.graph_points
 	});
 
 	close();
