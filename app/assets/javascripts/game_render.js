@@ -103,6 +103,10 @@ GameRender.prototype.setup_player_selectors = function() {
 	this.player_selectors_elm.on('change', function(ev) {
 		var $this = $(this);
 		var player = parseInt($this.attr('data-player-selector'));
+
+		if(self.game.player_controllers[player])
+			self.game.player_controllers[player].destroy();
+
 		self.game.player_controllers[player] = new self.available_player_controllers[parseInt($this.val())](self.game, player);
 		self.game.player_controllers[player].draw_options($('[data-player-options="'+player+'"]'));
 

@@ -1,4 +1,5 @@
 $(function() {
+
 	window.game = new GameRender(window.BOARD_SIZE);
 	game.show_valid_moves = true;
 	game.register_player_controller("AI [Minimax]", AIMinimaxController);

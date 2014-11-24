@@ -3,11 +3,6 @@ importScripts(
 	"/assets/controllers/ai_minimax.js"
 );
 
-var valid_moves = [];
-var move_weights = [];
-var game;
-var player;
-
 onmessage = function(event) {
 	var data = event.data;
 	var game_data = data.game;
@@ -19,7 +14,7 @@ onmessage = function(event) {
 	game.process_board();
 
 	var player_data = data.player;
-	var player = new AIMinimaxController(game, data.player.number, data.player.depth, game, {allow_for_render: false, graph: data.player.graph});
+	var player = new AIMinimaxController(game, data.player.number, data.player.depth, game, {allow_for_render: false, graph: data.player.graph, preload_n_workers: 0});
 	player.get_weight = player.weighting_functions[player_data.weighting_function_key].func;
 	player.tiebreak_method = player.tiebreak_functions[player_data.tiebreak_method_key].func;
 
@@ -35,5 +30,7 @@ onmessage = function(event) {
 		graph_points: res.graph_points
 	});
 
-	close();
+	player.destroy();
+
+	//close();
 }

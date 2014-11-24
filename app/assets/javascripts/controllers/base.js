@@ -36,3 +36,7 @@ BaseController.prototype.keypress = function(ev) {
 BaseController.prototype.reset = function() {
 
 };
+
+BaseController.prototype.destroy = function() {
+
+};

@@ -19,9 +19,18 @@ var AIMinimaxController = function(game, player, depth, original_game, options) 
 
 	this.default_depth = 2;
 	this.depth = depth || this.default_depth;
-	this.default_thread_breakpoint = 4;
+	this.default_thread_breakpoint = -1;
 	this.thread_breakpoint = this.default_thread_breakpoint;
 	this.thread_minimax = true;
+
+	this.workers = [];
+
+	if(options.preload_n_workers === undefined)
+		options.preload_n_workers = 6;
+
+	for(var i = 0; i < options.preload_n_workers; i++) {
+		this.workers[i] = this.create_worker();
+	}
 
 	var rel_diff_helper = (function(game) {
 		var them = game.other_player(self.player);
@@ -131,22 +140,6 @@ AIMinimaxController.prototype.your_move = function() {
 
 	this.play_foward();
 
-	// if(this.best_move_index === null || this.best_move_index === undefined)
-	// 	this.best_move = this.game.valid_moves[0];
-	// else
-	// 	this.best_move = this.game.valid_moves[this.best_move_index];
-
-
-	// this.game.fire('player.calculated', {player: this.player});
-	// if(this.pause && this.pause_until_key) {
-	// 	this.game.fire('player.waitforkey', {player: this.player});
-	// } else {
-	// 	var self = this;
-	// 	if(this.allow_for_render)
-	// 		setTimeout(function() {self.take_best_move()}, 1);
-	// 	else
-	// 		this.take_best_move();
-	// }
 };
 
 AIMinimaxController.prototype.do_move = function() {
@@ -282,77 +275,10 @@ AIMinimaxController.prototype.minimax = function(game, depth, maximizing) {
 
 AIMinimaxController.prototype.minimax_async = function(game, depth) {
 	var self = this;
-	var game = this.game;
-	var maximizing = true;
 
 	this.results_queue = [];
-	var results_count = 0;
-	var graph_points = {};
-	var recieve_message = function(event) {
-		var data = event.data;
-		self.results_queue[data.index] = data.weight;
-
-		if(self.graph) {
-			graph_points[data.index].weight = data.weight;
-			graph_points[data.index].subtree = data.graph_points;
-		}
-
-		results_count += 1;
-
-		if(results_count != game.valid_moves.length)
-			return;
-
-		var weights = self.results_queue;
-		var max = self.max;
-
-		var best_move_indexs = {};
-		var best_weight;
-
-
-		best_weight = self.min;
-
-		for(var i = 0; i < weights.length; i++) {
-			if((maximizing && weights[i] >= best_weight) ||
-				(!maximizing && weights[i] <= best_weight)) {
-
-				best_weight = weights[i];
-
-
-				if(!best_move_indexs[best_weight])
-					best_move_indexs[best_weight] = [];
-
-				best_move_indexs[best_weight].push(i);
-			}
-
-		}
-
-		self.valid_move_weights = weights;
-		self.best_move_weight = best_weight;
-
-		var move_indexes = best_move_indexs[best_weight];
-
-		self.best_move_index = self.tiebreak_method(move_indexes);
-
-		if(self.graph) {
-			self.graph_points = {
-				0: {
-					board: self.game.board,
-					weight: best_weight,
-					subtree: graph_points,
-					maximizing: true
-				}
-			};
-		}
-
-		if(self.best_move_index === null || self.best_move_index === undefined)
-			self.best_move = self.game.valid_moves[0];
-		else
-			self.best_move = self.game.valid_moves[self.best_move_index];
-
-		self.game.fire('player.calculated', {player: self.player});
-
-		self.do_move();
-	};
+	this.results_count = 0;
+	this.graph_points = {};
 
 	for(var i = 0; i < game.valid_moves.length; i++) {
 
@@ -399,15 +325,12 @@ AIMinimaxController.prototype.minimax_async = function(game, depth) {
 			}
 		}
 
+		var worker = this.workers[i];
+		if(!worker) {
+			worker = this.create_worker();
+			this.workers[i] = worker;
+		}
 
-			
-
-		var worker = new Worker("<%= asset_path "workers/ai_minimax.js" %>");
-		worker.onerror = function(error) {
-			throw error;
-		};
-
-		worker.onmessage = recieve_message;
 		worker.postMessage({
 			game: {
 				board_size: new_game.board_size,
@@ -425,9 +348,7 @@ AIMinimaxController.prototype.minimax_async = function(game, depth) {
 			},
 			index: i
 		});
-	}
-
-	
+	}	
 }
 
 AIMinimaxController.prototype.get_weight_def = function(game) {
@@ -551,7 +472,7 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 
 	graph = $("<div>", {class: "form_group"}).append(graph);
 
-	options_container.append(search_depth, weight_method, tiebreak_method, pause_until_key, thread_minimax, thread_breakpoint, graph);
+	options_container.append(search_depth, weight_method, tiebreak_method, pause_until_key, thread_minimax/*, thread_breakpoint*/, graph);
 };
 
 AIMinimaxController.prototype.keypress = function(ev) {
@@ -568,4 +489,94 @@ AIMinimaxController.prototype.reset = function(ev) {
 AIMinimaxController.prototype.recalc = function() {
 	if(this.game.active_player == this.player && this.game.running())
 		this.your_move();
-}
+};
+
+AIMinimaxController.prototype.destroy = function() {
+	// Cleanup any spawned workers.
+	for(var i = 0; i < this.workers.length; i++) {
+		this.workers[i].terminate();
+		this.workers[i] = null;
+	}
+};
+
+
+AIMinimaxController.prototype.create_worker = function() {
+	var worker = new Worker("<%= asset_path "workers/ai_minimax.js" %>");
+	worker.onerror = function(error) {
+		throw error;
+	};
+	var self = this;
+	worker.onmessage = function(event) {
+		self.recieve_message(event);
+	};
+
+	return worker;
+};
+
+AIMinimaxController.prototype.recieve_message = function(event) {
+	var data = event.data;
+	var maximizing = true;
+
+	this.results_queue[data.index] = data.weight;
+
+	if(this.graph) {
+		this.graph_points[data.index].weight = data.weight;
+		this.graph_points[data.index].subtree = data.graph_points;
+	}
+
+	this.results_count += 1;
+
+	if(this.results_count != this.game.valid_moves.length)
+		return;
+
+	var weights = this.results_queue;
+	var max = this.max;
+
+	var best_move_indexs = {};
+	var best_weight;
+
+
+	best_weight = this.min;
+
+	for(var i = 0; i < weights.length; i++) {
+		if((maximizing && weights[i] >= best_weight) ||
+			(!maximizing && weights[i] <= best_weight)) {
+
+			best_weight = weights[i];
+
+
+			if(!best_move_indexs[best_weight])
+				best_move_indexs[best_weight] = [];
+
+			best_move_indexs[best_weight].push(i);
+		}
+
+	}
+
+	this.valid_move_weights = weights;
+	this.best_move_weight = best_weight;
+
+	var move_indexes = best_move_indexs[best_weight];
+
+	this.best_move_index = this.tiebreak_method(move_indexes);
+
+	if(this.graph) {
+		this.graph_points = {
+			0: {
+				board: this.game.board,
+				weight: best_weight,
+				subtree: this.graph_points,
+				maximizing: true
+			}
+		};
+	}
+
+	if(this.best_move_index === null || this.best_move_index === undefined)
+		this.best_move = this.game.valid_moves[0];
+	else
+		this.best_move = this.game.valid_moves[this.best_move_index];
+
+	this.game.fire('player.calculated', {player: this.player});
+
+	this.do_move();
+};
