@@ -5,20 +5,20 @@ importScripts(
 
 onmessage = function(event) {
 	var data = event.data;
-	var game_data = data.game;
+	var game_data = data.game.internal_state;
 	var game = new Game(game_data.board_size);
-	game.board = game_data.board;
-	game.game_state = game_data.game_state;
-	game.active_player = game_data.active_player;
-	game.player_controllers = [null,null];
+	game.set_internal_state(game_data);
 	game.process_board();
 
+	var original_game = new Game(data.start_point.board_size);
+	original_game.set_internal_state(data.start_point);
+
 	var player_data = data.player;
-	var player = new AIMinimaxController(game, data.player.number, data.player.depth, game, {allow_for_render: false, graph: data.player.graph, preload_n_workers: 0});
+	var player = new AIMinimaxController(game, data.player.number, data.player.depth, original_game, {allow_for_render: false, graph: data.player.graph, preload_n_workers: 0, });
 	player.get_weight = player.weighting_functions[player_data.weighting_function_key].func;
 	player.tiebreak_method = player.tiebreak_functions[player_data.tiebreak_method_key].func;
 
-	var res = player.minimax(game, player.depth, false);
+	var res = player.minimax(game, data.player.depth, data.player.maximizing);
 
 	postMessage({
 		valid_moves: game.valid_moves,

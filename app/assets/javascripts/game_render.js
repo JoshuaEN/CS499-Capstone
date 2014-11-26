@@ -175,7 +175,16 @@ GameRender.prototype.draw = function() {
 };
 
 GameRender.prototype.draw_turn_info = function() {
-	this.current_player_elm.text("It's " + this.player_strings[this.game.active_player].color + "'s Turn");
+	if(this.game.finished()) {
+		var counts = this.game.get_counts();
+
+		if(this.game.winner !== null)
+			this.current_player_elm.text("Game Over, " + this.player_strings[this.game.winner].color + " won by " + Math.abs(counts[0] - counts[1]) + " disk(s) (" + counts[0] + ":" + counts[1] + ")")	;
+		else
+			this.current_player_elm.text("Game Over, players tied with " + counts[0] + " disk(s) each (" + counts[0] + ":" + counts[1] + ")");
+	} else {
+		this.current_player_elm.text("It's " + this.player_strings[this.game.active_player].color + "'s Turn");
+	}
 };
 
 GameRender.prototype.highlight_valid_moves = function() {
@@ -221,7 +230,6 @@ GameRender.prototype.draw_graph_row = function(points, node_id, parent_id) {
 		var cur_node = node_id;
 		var point = points[v];
 
-		console.log(cur_node + " | " + point.weight + " | " + parent_id);
 		var formatted;
 
 		if(point.endpoint || !point.subtree) {
@@ -340,8 +348,10 @@ GameRender.prototype.handle_events = function(eventName, data) {
 	if(eventName == 'game.diskplaced') {
 
 	} else if(eventName == 'game.statechange') {
-		if(data.after == "deadlock")
+		if(data.after == "deadlock") {
 			this.draw();
+			this.draw_turn_info();
+		}
 	} else if(eventName == 'game.boardadvance') {
 		this.draw_turn_info();
 	} else if(eventName == 'game.turnadvance') {// || eventName == "game.player.waitforkey") {
@@ -356,10 +366,10 @@ GameRender.prototype.handle_events = function(eventName, data) {
 	} else if(eventName == 'game.player.calculating') {
 		this.waiting(true);
 		this.clean_grid();		
-	} else {
-		console.log("Unhandled Event: " + eventName);
-		console.log(data);
 	}
+
+	console.log("Event Logged: " + eventName);
+	console.log(data);
 };
 
 GameRender.prototype.waiting = function(waiting) {

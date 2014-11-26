@@ -350,18 +350,24 @@ Game.prototype.finished = function() {
 };
 
 Game.prototype.internal_state = function(setter) {
-
+	if(setter === undefined)
+		return get_internal_state();
+	else
+		return set_internal_state(setter);
 };
 
 Game.prototype.get_internal_state = function() {
 	return {
-		board: this.board,
+		board: this.board.slice(0),
 		board_size: this.board_size,
 		active_player: this.active_player,
-		active_player_controller: this.active_player_controller
+		winner: this.winner,
+		game_state: this.game_state
 	}
 };
 
 Game.prototype.set_internal_state = function(setter) {
-
+	for(var v in setter) {
+		this[v] = setter[v];
+	}
 };
