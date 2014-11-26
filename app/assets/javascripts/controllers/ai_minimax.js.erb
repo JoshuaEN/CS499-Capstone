@@ -94,10 +94,17 @@ var AIMinimaxController = function(game, player, depth, original_game, options) 
 				return arr[0];
 			})
 		},
-		mid: {
-			name: "Middle Index",
+		mid_c: {
+			name: "Middle Index (Ceiling)",
 			func: (function(arr) {
-				var mid = Math.floor(arr.length/2);
+				var mid = Math.ceil((arr.length-1)/2);
+				return arr[mid];
+			})
+		},
+		mid_f: {
+			name: "Middle Index (Floor)",
+			func: (function(arr) {
+				var mid = Math.floor((arr.length-1)/2);
 				return arr[mid];
 			})
 		},
