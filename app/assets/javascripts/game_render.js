@@ -170,6 +170,7 @@ GameRender.prototype.draw = function() {
 	if(this.game.active_player_controller && this.is_waiting == false) {
 		this.game.active_player_controller.draw_board();
 		this.draw_graph();
+		this.log_counts();
 	}
 
 };
@@ -194,6 +195,36 @@ GameRender.prototype.highlight_valid_moves = function() {
 	for(var i = 0; i < this.game.valid_moves.length; i++) {
 		this.board_grids[this.game.valid_moves[i]].css("background", "#C1E2C1");
 	}
+};
+
+GameRender.prototype.log_counts = function() {
+	var active = this.game.active_player_controller;
+	if(!active.record_counts)
+		return;
+
+	var totals = this.recursive_count(active.graph_points);
+	for(var v in totals) {
+		console.log(v + ": " + totals[v]);
+	}
+};
+
+GameRender.prototype.recursive_count = function(points, counts) {
+	counts = counts || {
+		endpoints: 0,
+		nodes: 0
+	};
+
+	for(var v in points) {
+		var point = points[v];
+
+		if(point.endpoint  || !point.subtree) {
+			counts.endpoints += 1;
+		} else {
+			counts = this.recursive_count(point.subtree, counts);
+		}
+	}
+
+	return counts;
 };
 
 GameRender.prototype.draw_graph = function() {
@@ -235,7 +266,10 @@ GameRender.prototype.draw_graph_row = function(points, node_id, parent_id) {
 		if(point.endpoint || !point.subtree) {
 			formatted = '<div style=""><div style="text-align:center;">Endpoint Weight: ' + point.weight + '</div>' + this.stringify_board(point.board, this.game.board_size) + '</div>';
 		} else {
-			formatted = '<div style=""><div style="text-align:center;">('+(point.maximizing ? "Maximizing" : "Minimizing" )+')<br>Best Weight: ' + point.weight + '</div>' + this.stringify_board(point.board, this.game.board_size) + '</div>';
+			formatted = '<div style=""><div style="text-align:center;">('+(point.maximizing ? "Maximizing" : "Minimizing" )+')<br>'+
+			'i&alpha; = ' + point.ra + '<br>i&beta; = ' + point.rb + '<br>'+
+			'&alpha; = ' + point.alpha + '<br>&beta; = ' + point.beta + '<br>Halt: ' + point.stopped + '<br>'+
+			'Best Weight: ' + point.weight + '</div>' + this.stringify_board(point.board, this.game.board_size) + '</div>';
 		}
 
 		this.graph_data_list.addRow([{v:cur_node.toString(), 
@@ -369,7 +403,7 @@ GameRender.prototype.handle_events = function(eventName, data) {
 	}
 
 	console.log("Event Logged: " + eventName);
-	console.log(data);
+	// console.log(data);
 };
 
 GameRender.prototype.waiting = function(waiting) {

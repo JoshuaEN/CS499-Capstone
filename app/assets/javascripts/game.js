@@ -362,7 +362,8 @@ Game.prototype.get_internal_state = function() {
 		board_size: this.board_size,
 		active_player: this.active_player,
 		winner: this.winner,
-		game_state: this.game_state
+		game_state: this.game_state,
+		valid_moves: this.valid_moves
 	}
 };
 
@@ -370,4 +371,11 @@ Game.prototype.set_internal_state = function(setter) {
 	for(var v in setter) {
 		this[v] = setter[v];
 	}
+};
+
+Game.prototype.dup = function() {
+	var new_game = new Game(this.board_size);
+	new_game.set_internal_state(this.get_internal_state());
+	new_game.player_controllers = [null,null];
+	return new_game;
 };
