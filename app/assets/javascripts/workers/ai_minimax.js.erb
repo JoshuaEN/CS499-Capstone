@@ -1,65 +1,52 @@
 importScripts(
 	"/assets/game.js",
-	"/assets/controllers/ai_minimax.js"
+	"/assets/minimax.js"
 );
 
 onmessage = function(event) {
 	var data = event.data;
-	var game_data = data.game.internal_state;
-	var game = new Game(game_data.board_size);
-	game.set_internal_state(game_data);
+	var game = new Game(data.game.board_size);
+	game.set_internal_state(data.game);
 	game.process_board();
 
-	var original_game = new Game(data.start_point.board_size);
-	original_game.set_internal_state(data.start_point);
+	var options = data.options;
 
-	var player_data = data.player;
-	var player = new AIMinimaxController(game, data.player.number, data.player.depth, original_game, {allow_for_render: false, graph: data.player.graph, preload_n_workers: 0, });
-	player.get_weight = player.weighting_functions[player_data.weighting_function_key].func;
-	player.tiebreak_method = player.tiebreak_functions[player_data.tiebreak_method_key].func;
-	player.alpha_beta = player_data.alpha_beta;
+	var minimax = new Minimax(data.player, {
+		alpha_beta: options.alpha_beta,
+		alpha_beta_gto: options.alpha_beta_gto,
+		record_path: (options.graph || options.record_counts),
+		tiebreak: Minimax_tiebreak_functions[options.tiebreak_method_key].func,
+		get_weight: Minimax_weight_functions[options.weighting_function_key].func
+	});
 
+	var minimax_result;
+	var depth = options.depth-1;
 
-	if(data.options.recursive_deepening) {
-		var steps = [2,4];
-
-		for(var i = 0; i < steps.length; i++) {
-			player.minimax(game, steps[i], true, -Infinity, Infinity);
-
-			var sortable = [];
-
-			for(var j = 0; j < player.valid_move_weights.length; j++) {
-				sortable[j] = [player.valid_move_weights[j], game.valid_moves[j]];
-			}
-
-			sortable.sort(function(x,y) { return y[0] - x[0]});
-
-			var ordered_valid_moves = [];
-
-			for(var j = 0; j < sortable.length; j++) {
-				ordered_valid_moves[j] = sortable[j][1];
-			}
-
-			//optmized_game = new Game(this.game.board_size);
-			//optmized_game.set_internal_state(this.game.get_internal_state());
-			game.valid_moves = ordered_valid_moves;
+	if(options.alpha_beta_rr) {
+		if(options.recursive_deepening) {
+			minimax_result = minimax.minimax_rr(game, depth, (game.player === data.player), -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
+				return minimax.minimax_rd(game, depth, maximizing, alpha, beta, [2,4]);
+			});
+		} else {
+			minimax_result = minimax.minimax_rr(game, depth, (game.player === data.player), -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
+				return minimax.minimax(game, depth, maximizing, alpha, beta);
+			});
 		}
-		
+	} else if (options.recursive_deepening) {
+		minimax_result = minimax.minimax_rd(game, depth, (game.player === data.player), -Infinity, Infinity, [2,4]);
+	} else {
+		minimax_result = minimax.minimax(game, depth, (game.player === data.player), -Infinity, Infinity);
 	}
-
-	var res = player.minimax(game, data.player.depth, data.player.maximizing);
 
 	postMessage({
 		valid_moves: game.valid_moves,
-		valid_move_weights: player.valid_move_weights,
-		best_move_weight: player.best_move_weight,
-		best_move_index: player.best_move_index,
+		valid_move_weights: minimax_result.valid_move_weights,
+		best_move_weight: minimax_result.best_move_weight,
+		best_move_index: minimax_result.best_move_index,
 		index: data.index,
-		weight: player.best_move_weight || res.weight,
-		graph_points: res.graph_points
+		check_num: data.check_num,
+		weight: minimax_result.weight,
+		graph_points: minimax_result.graph_points
 	});
 
-	player.destroy();
-
-	//close();
 };

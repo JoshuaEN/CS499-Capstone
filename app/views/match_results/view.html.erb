@@ -1,0 +1,42 @@
+<head>
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+	<script src="http://ajax.googleapis.com/ajax/libs/jqueryui/1.11.2/jquery-ui.min.js"></script>
+	<%= javascript_include_tag 'results/view.js' 
+	%>
+	<%= stylesheet_link_tag 'application.css' %>
+
+	<script type="text/javascript" src="https://www.google.com/jsapi"></script>
+	<script type="text/javascript">
+		google.load('visualization', '1', {packages: ['orgchart']});
+		google.setOnLoadCallback(function(){
+			window.CHARTS_READY = true;
+			if(window.game) {
+				window.game.draw_graph();
+			}
+		});
+	</script>
+</head>
+<body>
+	<div id="player_settings">
+		<div id="player_settings_0" class="player_settings">
+			<label>
+				Dark
+				<select data-controller-picker="0">
+					
+				</select>
+			</label>
+			<div data-controller-options="0">
+			</div>
+		</div>
+		<div id="player_settings_1" class="player_settings">
+			<label>
+				Light
+				<select data-controller-picker="1">
+					
+				</select>
+			</label>
+			<div data-controller-options="1">
+			</div>
+		</div>
+	</div>
+</body>

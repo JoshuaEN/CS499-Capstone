@@ -12,8 +12,8 @@ if(typeof this.CS499.tests === "undefined")
 		init: [
 			(function(options) {
 				var game = new Game(8);
-				var p0 = new AIMinimaxController(game, 0, 4, options);
-				var p1 = new AIMinimaxController(game, 1, 4, options);
+				var p0 = new AIMinimaxController(game, 0, options);
+				var p1 = new AIMinimaxController(game, 1, options);
 				game.player_controllers = [p0, p1];
 
 				return {game: game, players: [p0, p1]};

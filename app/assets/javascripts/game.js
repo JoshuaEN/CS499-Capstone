@@ -209,34 +209,54 @@ Game.prototype.find_valid_moves = function(ours) {
 	return {valid_moves: valid, gains: valid_gains};
 }
 
-Game.prototype.explore_directions = function(x,y,ours,on_valid, on_all) {
-	var nw = this.explore_direction(x,y,-1,1,ours,on_valid,on_all); 	// North West
-	var n = this.explore_direction(x,y,0,1,ours,on_valid,on_all); 		// North
-	var ne = this.explore_direction(x,y,1,1,ours,on_valid,on_all); 		// North East
-	var e = this.explore_direction(x,y,1,0,ours,on_valid,on_all); 		// East
-	var se = this.explore_direction(x,y,1,-1,ours,on_valid,on_all); 	// South East
-	var s = this.explore_direction(x,y,0,-1,ours,on_valid,on_all); 		// South
-	var sw = this.explore_direction(x,y,-1,-1,ours,on_valid,on_all); 	// South West
-	var w = this.explore_direction(x,y,-1,0,ours,on_valid,on_all); 		// West
+Game.prototype.explore_directions = function(x,y,ours,on_valid, on_all, is_valid) {
+	var nw = this.explore_direction(x,y,-1,-1,ours,on_valid,on_all, is_valid); 	// North West
+	var n = this.explore_direction(x,y,0,-1,ours,on_valid,on_all, is_valid); 		// North
+	var ne = this.explore_direction(x,y,1,-1,ours,on_valid,on_all, is_valid); 		// North East
+	var e = this.explore_direction(x,y,1,0,ours,on_valid,on_all, is_valid); 		// East
+	var se = this.explore_direction(x,y,1,1,ours,on_valid,on_all, is_valid); 	// South East
+	var s = this.explore_direction(x,y,0,1,ours,on_valid,on_all, is_valid); 		// South
+	var sw = this.explore_direction(x,y,-1,1,ours,on_valid,on_all, is_valid); 	// South West
+	var w = this.explore_direction(x,y,-1,0,ours,on_valid,on_all, is_valid); 		// West
+
+	return {
+		nw: nw,
+		n: n,
+		ne: ne,
+		e: e,
+		se: se,
+		s: s,
+		sw: sw,
+		w: w
+	}
 }
 
-Game.prototype.explore_direction = function(x,y,mod_x, mod_y, ours, on_valid, on_all) {
+Game.prototype.explore_direction = function(x,y,mod_x, mod_y, ours, on_valid, on_all, is_valid) {
 	var mx = x + mod_x;
 	var my = y + mod_y;
 
 	var disk = this.tile(mx, my);
 
-	if(on_all)
+	if(on_all) {
 		on_all.call(this, mx, my, disk, ours);
+	}
 
-	if(disk === undefined || // Out of bounds
-		disk === null) // No disk present
-		return false; // If we don't encounter our own disk at some point, then there's no gains to be had.
+	if(is_valid) {
+		var res = is_valid.call(this, mx, my, disk, ours);
 
-	if(disk === ours) // If we encounter our own disk, then we can gain distance number of disks by placing our piece at the starting location.
-		return true;
+		if(res !== undefined)
+			return res;
 
-	var deeper_result = this.explore_direction(mx,my,mod_x,mod_y,ours,on_valid, on_all);
+	} else {
+		if(disk === undefined || // Out of bounds
+			disk === null) // No disk present
+			return false; // If we don't encounter our own disk at some point, then there's no gains to be had.
+
+		if(disk === ours) // If we encounter our own disk, then we can gain distance number of disks by placing our piece at the starting location.
+			return true;
+	}
+
+	var deeper_result = this.explore_direction(mx,my,mod_x,mod_y,ours,on_valid, on_all, is_valid);
 	if(on_valid && deeper_result) {
 		on_valid.call(this, mx, my, disk, ours);
 	}
@@ -321,6 +341,45 @@ Game.prototype.get_counts = function() {
 		var tile = this.tile(x,y);
 
 		counts[tile] += 1;
+	}
+
+	return counts;
+};
+
+Game.prototype.get_stable_counts = function() {
+	var counts = {
+		0: 0,
+		1: 0,
+		null: 0
+	};
+
+	for(var i = 0; i < this.board.length; i++) {
+		var xy = this.get_xy(i);
+		var x = xy.x, y = xy.y;
+		var disk = this.tile(x,y);
+
+		if(disk === null)
+			continue;
+
+		var results =this.explore_directions(x, y, disk, null, null, 
+			(function(mx,my,disk,ours) {
+
+				// Out of bounds, we've reached the edge of the board successfully.
+				if(disk === undefined)
+					return true;
+
+				if(disk !== ours)
+					return false;
+			})
+		);
+
+		if( (results.n || results.s) &&
+			(results.e || results.w) &&
+			(results.ne || results.sw) &&
+			(results.nw || results.se)) {
+
+			counts[disk] += 1;
+		}
 	}
 
 	return counts;

@@ -7,6 +7,7 @@ var Minimax = function(player, options) {
 
 	this.options = {
 		alpha_beta: true,
+		alpha_beta_gto: false,
 		record_path: false,
 		tiebreak: (function(arr) { return arr[0]; }),
 		get_weight: (function(game) { return undefined; })
@@ -31,6 +32,9 @@ Minimax.prototype.minimax_rd = function(game, depth, maximizing, alpha, beta, de
 		var minimax_result = this.minimax(new_game, depth_steps[i], maximizing, alpha, beta);
 		var sortable = [];
 
+		if(!minimax_result.valid_move_weights)
+			break;
+
 		for(var j = 0; j < minimax_result.valid_move_weights.length; j++) {
 			sortable[j] = [minimax_result.valid_move_weights[j], new_game.valid_moves[j]];
 		}
@@ -47,6 +51,9 @@ Minimax.prototype.minimax_rd = function(game, depth, maximizing, alpha, beta, de
 	}
 
 	var minimax_result = this.minimax(new_game, depth, maximizing, alpha, beta);
+
+	if(!minimax_result.valid_move_weights)
+		return minimax_result;
 
 	// Map the result data back to the same indexes as they appear in the given game's valid moves.
 	var sortable = [];
@@ -65,7 +72,19 @@ Minimax.prototype.minimax_rd = function(game, depth, maximizing, alpha, beta, de
 	return minimax_result;
 };
 
+Minimax.prototype.minimax_rr = function(game, depth, maximizing, alpha, beta, callback) {
+	var self = this;
+
+	return this.minimax_loop(game, depth, maximizing, alpha, beta, (function(game, depth, maximizing, alpha, beta, minimax_func) {
+		return callback.call(this, game, depth, maximizing, -Infinity, Infinity);
+	}));
+};
+
 Minimax.prototype.minimax = function(game, depth, maximizing, alpha, beta) {
+	return this.minimax_loop(game, depth, maximizing, alpha, beta, this.minimax_loop);
+};
+
+Minimax.prototype.minimax_loop = function(game, depth, maximizing, alpha, beta, minimax_func) {
 
 	if(depth <= 0 || game.finished()) {
 		return {weight: this.get_weight_def(game), endpoint: true};
@@ -81,7 +100,7 @@ Minimax.prototype.minimax = function(game, depth, maximizing, alpha, beta) {
 		graph_points[i] = loop_pre_res.graph_point;
 
 
-		var minimax_res = this.minimax(loop_pre_res.new_game, loop_pre_res.new_depth, loop_pre_res.new_maximizing, alpha, beta);
+		var minimax_res = minimax_func.call(this, loop_pre_res.new_game, loop_pre_res.new_depth, loop_pre_res.new_maximizing, alpha, beta, minimax_func);
 		weights.push(minimax_res.weight);
 
 		var res_ab;
@@ -108,8 +127,8 @@ Minimax.prototype.minimax = function(game, depth, maximizing, alpha, beta) {
 	var get_best_res = this.get_best(weights, maximizing);
 	get_best_res.graph_points = graph_points;
 
-	if(this.options.alpha_beta && minimax_res.stopped)
-		get_best_res.weight = (maximizing ? alpha : beta);
+	// if(this.options.alpha_beta && minimax_res.stopped)
+	// 	get_best_res.weight = (maximizing ? alpha : beta);
 
 	get_best_res.ra = ra;
 	get_best_res.rb = rb;
@@ -206,7 +225,13 @@ Minimax.prototype.alpha_beta = function(maximizing, alpha, beta, weight) {
 			beta = weight;
 	}
 
-	return {alpha: alpha, beta: beta, stop: (alpha >= beta)};
+	var stop;
+	if(this.options.alpha_beta_gto)
+		stop = alpha > beta;
+	else
+		stop = alpha >= beta;
+
+	return {alpha: alpha, beta: beta, stop: stop};
 };
 
 Minimax.prototype.get_weight_def = function(game) {
@@ -223,7 +248,7 @@ Minimax.prototype.get_weight_def = function(game) {
 };
 
 (function() {
-
+	var self = this;
 	this.Minimax_weight_functions = {
 		// Performs a simple comparison between the count for our player and the enemy player at the current state of the board.
 		basic: {
@@ -235,6 +260,246 @@ Minimax.prototype.get_weight_def = function(game) {
 				var counts = game.get_counts();
 		
 				return counts[us] - counts[them];
+			})
+		},
+		stable: {
+			name: "Stable Disks Count",
+			func: (function(game, player) {
+				var stable_disks = new Array(game.board_size * game.board_size);
+				var max_cord = game.board_size-1;
+				var counts = [0,0];
+				for(var i = 0; i < stable_disks.length; i++) {
+					stable_disks[i] = null;
+				}
+
+				var sdisk = function(x, y, value) {
+					var idx = game.board_size * y + x;
+					if(value === undefined)
+						return stable_disks[idx];
+					else
+						stable_disks[idx] = value;
+				};
+
+				// // Set the stable state of each corner piece.
+				// sdisk(0,0, game.tile(0,0));
+				// sdisk(0,max_cord, game.tile(0,max_cord));
+				// sdisk(max_cord,0, game.tile(max_cord,0));
+				// sdisk(max_cord,max_cord, game.tile(max_cord,max_cord));
+
+				for(var i = 0; i < game.board.length; i++) {
+					var xy = game.get_xy(i);
+					var x = xy.x, y = xy.y;
+					var disk = game.tile(x,y);
+
+					if(disk === null)
+						continue;
+
+					var results =game.explore_directions(x, y, disk, null, null, 
+						(function(mx,my,disk,ours) {
+
+							// Out of bounds, we've reached the edge of the board successfully.
+							if(disk === undefined)
+								return true;
+
+							if(disk !== ours)
+								return false;
+						})
+					);
+
+					if( (results.n || results.s) &&
+						(results.e || results.w) &&
+						(results.ne || results.sw) &&
+						(results.nw || results.se)) {
+
+						sdisk(x,y,disk);
+
+						counts[disk] += 1;
+					}
+				}
+
+				return counts[player];
+			})
+		},
+		stable_players_diff: {
+			name: "Stable Disks Difference",
+			func: (function(game, player) {
+				var stable_disks = new Array(game.board_size * game.board_size);
+				var max_cord = game.board_size-1;
+				var counts = [0,0];
+				for(var i = 0; i < stable_disks.length; i++) {
+					stable_disks[i] = null;
+				}
+
+				var sdisk = function(x, y, value) {
+					var idx = game.board_size * y + x;
+					if(value === undefined)
+						return stable_disks[idx];
+					else
+						stable_disks[idx] = value;
+				};
+
+				// // Set the stable state of each corner piece.
+				// sdisk(0,0, game.tile(0,0));
+				// sdisk(0,max_cord, game.tile(0,max_cord));
+				// sdisk(max_cord,0, game.tile(max_cord,0));
+				// sdisk(max_cord,max_cord, game.tile(max_cord,max_cord));
+
+				for(var i = 0; i < game.board.length; i++) {
+					var xy = game.get_xy(i);
+					var x = xy.x, y = xy.y;
+					var disk = game.tile(x,y);
+
+					if(disk === null)
+						continue;
+
+					var results =game.explore_directions(x, y, disk, null, null, 
+						(function(mx,my,disk,ours) {
+
+							// Out of bounds, we've reached the edge of the board successfully.
+							if(disk === undefined)
+								return true;
+
+							if(disk !== ours)
+								return false;
+						})
+					);
+
+					if( (results.n || results.s) &&
+						(results.e || results.w) &&
+						(results.ne || results.sw) &&
+						(results.nw || results.se)) {
+
+						sdisk(x,y,disk);
+
+						counts[disk] += 1;
+					}
+				}
+
+				var them = game.other_player(player);
+				var us = player;
+				return counts[us] - counts[them];
+			})
+		},
+		stable_diff_r1: {
+			name: "Stable Differential (Sx2)",
+			func: (function(game, player) {
+				var stable_disks = Minimax_weight_functions.stable.func(game, player);
+				var unstable_disks = game.get_counts()[player] - stable_disks;
+
+				return (stable_disks*2) + (unstable_disks*-1);
+			})
+		},
+		stable_diff_r2: {
+			name: "Stable Differential (Sx5)",
+			func: (function(game, player) {
+				var stable_disks = Minimax_weight_functions.stable.func(game, player);
+				var unstable_disks = game.get_counts()[player] - stable_disks;
+
+				return (stable_disks*5) + (unstable_disks*-1);
+			})
+		},
+		tiered_weighting_r2: {
+			name: "Tiered Weighting",
+			func: (function(game, player) {
+				var them = game.other_player(player);
+				var us = player;
+
+				var get_ratio_func = (function(hash, us, them) {
+					var combined = hash[us] + hash[them] + 2;
+					return (hash[us]+1)*100/combined;
+				});
+
+				var stable_disks = game.get_stable_counts();
+				var stable_disk_ratio = get_ratio_func(stable_disks, us, them);
+
+				var unstable_disks = game.get_counts();
+				var unstable_disk_ratio = get_ratio_func(unstable_disks, us, them);
+
+				return stable_disk_ratio * 100000 + (unstable_disk_ratio * -10000)
+
+			})
+		},
+		tile_weighting_r1: {
+			name: "Tile Weighting",
+			func: (function(game, player) {
+				var disk_weights = new Array(game.board_size * game.board_size);
+				var max_cord = game.board_size-1;
+				var counts = [0,0];
+				for(var i = 0; i < disk_weights.length; i++) {
+					disk_weights[i] = 1;
+				}
+
+				var sdisk = function(x, y, value) {
+					var idx = game.board_size * y + x;
+					if(value === undefined)
+						return disk_weights[idx];
+					else
+						disk_weights[idx] = value;
+				};
+
+				// Coners are 50.
+				sdisk(0,0, 50);
+				sdisk(0,max_cord, 50);
+				sdisk(max_cord,0, 50);
+				sdisk(max_cord,max_cord, 50);
+
+				// Places next to corner are -1.
+				sdisk(0+1,0, -1);
+				sdisk(0,0+1, -1);
+				sdisk(0,max_cord+1, -1);
+				sdisk(0+1,max_cord, -1);
+				sdisk(max_cord,0+1, -1);
+				sdisk(max_cord+1,0, -1);
+				sdisk(max_cord,max_cord+1, -1);
+				sdisk(max_cord+1,max_cord, -1);
+
+				// Places 2 spaces away to corner are 5.
+				sdisk(0+2,0, 5);
+				sdisk(0,0+2, 5);
+				sdisk(0,max_cord+2, 5);
+				sdisk(0+2,max_cord, 5);
+				sdisk(max_cord,0+2, 5);
+				sdisk(max_cord+2,0, 5);
+				sdisk(max_cord,max_cord+2, 5);
+				sdisk(max_cord+2,max_cord, 5);
+
+				// Places 2 spaces away to corner are 5.
+				sdisk(0+3,0, 2);
+				sdisk(0,0+3, 2);
+				sdisk(0,max_cord+3, 2);
+				sdisk(0+3,max_cord, 2);
+				sdisk(max_cord,0+3, 2);
+				sdisk(max_cord+3,0, 2);
+				sdisk(max_cord,max_cord+3, 2);
+				sdisk(max_cord+3,max_cord, 2);
+
+				// Diagonials next to corners are -10
+				sdisk(0+1, 0+1, -10);
+				sdisk(max_cord+1, 0+1, -10);
+				sdisk(0+1, max_cord+1, -10);
+				sdisk(max_cord+1, max_cord+1, -10);
+
+				// Center is worth 0.
+				var top_left_center = (game.board_size/2)-1;
+				sdisk(top_left_center, top_left_center, 0);
+				sdisk(top_left_center+1, top_left_center, 0);
+				sdisk(top_left_center, top_left_center+1, 0);
+				sdisk(top_left_center+1, top_left_center+1, 0);
+
+				var values = {
+					null: 0,
+					0: 0,
+					1: 0
+				};
+
+				for(var i = 0; i < game.board.length; i++) {
+					var disk = game.board[i];
+					var disk_weight = disk_weights[i];
+
+					values[disk] += disk_weight;
+				}
+
+				return values[player];
 			})
 		}
 	};
@@ -267,7 +532,14 @@ Minimax.prototype.get_weight_def = function(game) {
 			})
 		},
 		rand: {
-			name: "Random Index",
+			name: "Random Index (Crypto)",
+			func: (function(arr) {
+				var rnd = crypto.getRandomValues(new Uint32Array(1))[0];
+				return arr[rnd%arr.length];
+			})
+		},
+		rand_math: {
+			name: "Random Index (Math)",
 			func: (function(arr) {
 				return arr[Math.floor(Math.random() * arr.length)];
 			})

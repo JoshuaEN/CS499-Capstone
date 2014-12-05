@@ -1,73 +1,48 @@
 //= require controllers/ai_base
 "use strict";
 
-var AIMinimaxController = function(game, player, depth, original_game, options) {
+var AIMinimaxController = function(game, player, options) {
 	BaseController.call(this, game, player);
+
+	this.options = {
+		alpha_beta: true,
+		alpha_beta_gto: false,
+		alpha_beta_rr: true,
+		graph: false,
+		record_counts: false,
+		thread_minimax: false,
+		recursive_deepening: false,
+		max_workers: 8,
+		preload_n_workers: 8,
+		pause: true,
+		pause_until_key: true,
+		weighting_function_key: "basic",
+		tiebreak_method_key: "rand",
+		depth: 2,
+		default_depth: 2,
+		alpha_beta_rd_depths: [2,4],
+		alpha_beta_rd_rr_depths: [1,3]
+	}
 
 	options = options || {};
 
-	this.allow_for_render = options.allow_for_render;
-
-	if(this.allow_for_render === undefined)
-		this.allow_for_render = true;
-
-	this.graph = options.graph;
-
-	if(this.graph === undefined)
-		this.graph = false;
-
-	this.record_counts = options.record_counts;
-
-	if(this.record_counts === undefined)
-		this.record_counts = false;
-
-	this.original_game = original_game || game;
-
-	this.default_depth = 2;
-	this.depth = depth || this.default_depth;
-	this.default_thread_breakpoint = -1;
-	this.thread_breakpoint = this.default_thread_breakpoint;
-	this.thread_minimax = true;
-
-	this.alpha_beta = true;
-	this.recursive_deepening = true;
+	for(var v in options) {
+		this.options[v] = options[v];
+	}
 
 	this.workers = [];
-	this.max_workers = 8;
 
-	if(options.preload_n_workers === undefined)
-		options.preload_n_workers = 8;
 
-	for(var i = 0; i < options.preload_n_workers; i++) {
+	for(var i = 0; i < this.options.preload_n_workers; i++) {
 		this.workers[i] = this.create_worker();
 	}
 
-	var rel_diff_helper = (function(game) {
-		var them = game.other_player(self.player);
-		var us = self.player;
-
-		var counts_now = self.original_game.get_counts();
-		var counts_potental = game.get_counts();
-
-		var diff_us = counts_potental[us] - counts_now[us];
-		var diff_them = counts_potental[them] - counts_now[them];
-
-		return {us: diff_us, them: diff_them};
-	});
-
 	var self = this;
-
-	this.get_weight = Minimax_weight_functions["basic"].func;
-	this.weighting_function_key = "basic";
 
 	this.max = Infinity;
 	this.min = -Infinity;
 
-	this.tiebreak_method = Minimax_tiebreak_functions["first"].func;
-	this.tiebreak_method_key = "first";
-
-	this.pause = true;
-	this.pause_until_key = true;
+	this.results_check_num = 0;
 
 	this.take_best_move = (function() {
 		if(!self.game.running())
@@ -90,7 +65,7 @@ AIMinimaxController.prototype.your_move = function() {
 };
 
 AIMinimaxController.prototype.do_move = function() {
-	if(this.pause && this.pause_until_key) {
+	if(this.options.pause && this.options.pause_until_key) {
 		this.game.fire('player.waitforkey', {player: this.player});
 	} else {
 		this.take_best_move();
@@ -98,235 +73,71 @@ AIMinimaxController.prototype.do_move = function() {
 };
 
 AIMinimaxController.prototype.play_foward = function() {
-	var depth = (this.depth === undefined || this.depth === null ? this.default_depth : this.depth);
+	var depth = (this.options.depth === undefined || this.options.depth === null ? this.options.default_depth : this.options.depth);
 	this.best_move_index = null;
 
 	this.minimax_start(this.game, depth);
 };
 
-// AIMinimaxController.prototype.minimax = function(game, depth, maximizing, alpha, beta) {
-// 	var ra = alpha, rb = beta;
-// 	// 0 being "false" is quite annoying at times.
-// 	if(alpha === undefined)
-// 		alpha = -Infinity;
-// 	if(beta === undefined)
-// 		beta = Infinity;
-
-// 	var graph_points = {};
-// 	if(depth <= 0 || game.finished()) {
-// 		return {weight: this.get_weight_def(game), endpoint: true};
-// 	} 
-
-// 	var weights = [];
-
-// 	for(var i = 0; i < game.valid_moves.length; i++) {
-// 		var res = this.minimax_loopprocess(i, game, depth);
-
-// 		graph_points[i] = res.graph_point;
-
-
-// 		var res2 = this.minimax(res.new_game, res.new_depth, res.new_maximizing, alpha, beta);
-// 		weights.push(res2.weight);
-
-// 		var res_ab;
-// 		if(this.alpha_beta) {
-// 			res_ab = this.alpha_beta_loopprocess(maximizing, alpha, beta, res2.weight);
-
-// 			alpha = res_ab.alpha;
-// 			beta = res_ab.beta;
-// 		}
-
-// 		if(this.graph) {
-// 			graph_points[i].weight = res2.weight;
-// 			graph_points[i].subtree = res2.graph_points;
-// 			graph_points[i].alpha = res2.alpha;
-// 			graph_points[i].beta = res2.beta;
-// 			graph_points[i].ra = res2.ra;
-// 			graph_points[i].rb = res2.rb;
-// 			graph_points[i].stopped = res2.stopped;
-// 		}
-
-// 		if(res_ab && res_ab.stop)
-// 			break;
-// 	}
-
-// 	var res3 = this.minimax_calculatebest(weights, maximizing);
-// 	res3.graph_points = graph_points;
-
-// 	if(this.alpha_beta && res2.stopped)
-// 		res3.weight = (maximizing ? alpha : beta);
-
-// 	res3.ra = ra;
-// 	res3.rb = rb;
-// 	res3.alpha = alpha;
-// 	res3.beta = beta;
-// 	res3.stopped = (res_ab ? res_ab.stop : undefined);
-// 	return res3;
-// };
-
-// AIMinimaxController.prototype.alpha_beta_loopprocess = function(maximizing, alpha, beta, weight) {
-
-// 	if(maximizing) {
-
-// 		if(weight > alpha) {
-// 			alpha = weight;
-// 		}
-
-// 	} else {
-
-// 		if(weight < beta)
-// 			beta = weight;
-// 	}
-
-// 	return {alpha: alpha, beta: beta, stop: (alpha >= beta)};
-// }
-
 AIMinimaxController.prototype.minimax_start = function(game, depth) {
 
-	var minimax = new Minimax(this.player, {
-		alpha_beta: this.alpha_beta,
-		record_path: (this.graph || this.record_counts),
-		tiebreak: Minimax_tiebreak_functions[this.tiebreak_method_key].func,
-		get_weight: Minimax_weight_functions[this.weighting_function_key].func
-	});
+	var minimax = this.minimax_instance();
 
 	var minimax_result;
 
-	if(this.recursive_deepening)
-		minimax_result = minimax.minimax_rd(this.game, this.depth, true, -Infinity, Infinity, [2,4]);
-	else
-		minimax_result = minimax.minimax(this.game, this.depth, true, -Infinity, Infinity);
+	if(this.options.thread_minimax) {
+		var self = this;
 
-	this.minimax_finalize(minimax_result);
-	return;
+		this.results_queue = [];
+		this.results_count = 0;
+		this.results_check_num += 1;
+		this.graph_points = {};
 
+		for(var i = 0; i < this.game.valid_moves.length; i++) {
 
-	asdfdas
+			var loop_pre_res = minimax.loop_pre(i, this.game, this.depth);
 
-
-
-	var self = this;
-
-	this.results_queue = [];
-	this.results_count = 0;
-	this.graph_points = {};
-
-	for(var i = 0; i < game.valid_moves.length; i++) {
-
-		var res = this.minimax_loopprocess(i, game, depth);
-
-		this.graph_points[i] = res.graph_point;
+			this.graph_points[i] = loop_pre_res.graph_point;
 
 
-		var worker = this.workers[i%this.max_workers];
-		if(!worker) {
-			worker = this.create_worker();
-			this.workers[i] = worker;
+			var worker = this.workers[i%this.options.max_workers];
+			if(!worker) {
+				worker = this.create_worker();
+				this.workers[i%this.options.max_workers] = worker;
+			}
+
+			worker.postMessage({
+				game: loop_pre_res.new_game.get_internal_state(),
+				options: this.options,
+				player: this.player,
+				index: i,
+				check_num: this.results_check_num
+			});
 		}
 
-		worker.postMessage({
-			game: {
-				internal_state: res.new_game.get_internal_state(),
-				valid_moves: res.new_game.valid_moves
-			},
-			player: {
-				maximizing: res.new_maximizing,
-				depth: res.new_depth,
-				number: this.player,
-				weighting_function_key: this.weighting_function_key,
-				tiebreak_method_key: this.tiebreak_method_key,
-				graph: this.graph,
-				alpha_beta: this.alpha_beta
-			},
-			options: {
-				recursive_deepening: this.recursive_deepening
-			},
-			start_point: game.get_internal_state(),
-			index: i
-		});
-	}	
+	} else {
+		var self = this;
+		if(this.options.alpha_beta_rr) {
+			if(this.options.recursive_deepening) {
+				minimax_result = minimax.minimax_rr(this.game, this.options.depth, true, -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
+					return minimax.minimax_rd(game, depth, maximizing, alpha, beta, self.options.alpha_beta_rd_rr_depths);
+				});
+			} else {
+				minimax_result = minimax.minimax_rr(this.game, this.options.depth, true, -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
+					return minimax.minimax(game, depth, maximizing, alpha, beta);
+				});
+			}
+		} else if (this.options.recursive_deepening) {
+			minimax_result = minimax.minimax_rd(this.game, this.options.depth, true, -Infinity, Infinity, this.options.alpha_beta_rd_depths);
+		} else {
+			minimax_result = minimax.minimax(this.game, this.options.depth, true, -Infinity, Infinity);
+		}
+
+		this.minimax_finalize(minimax_result);
+	}
+	return;
 }
 
-// AIMinimaxController.prototype.minimax_loopprocess = function(i, game, depth) {
-// 	var new_game = new Game(game.board_size);
-// 	new_game.set_internal_state(game.get_internal_state());
-// 	new_game.player_controllers = [null,null];
-
-// 	new_game.place_disk(game.valid_moves[i]);
-// 	new_game.advance_board();
-// 	new_game.game_at_end();
-
-// 	var new_depth = depth;
-// 	var graph_point = null;
-
-// 	// When we have to skip a turn, we technically are still taking a turn
-// 	// thus, we decrease the depth by two and send maximizing with the same value as we got it.
-// 	if(new_game.skip_turn() && game.game_at_end() == false) {
-// 		new_game.advance_board();
-// 		new_depth -= 1;
-
-// 		if(this.graph) {
-// 			graph_point = {
-// 				index: game.valid_moves[i],
-// 				board: new_game.board.slice(0),
-// 				skipped_turn: true
-// 			};
-// 		}
-// 	}
-// 	else {
-// 		new_depth -= 1;
-
-// 		if(this.graph) {
-// 			graph_point = {
-// 				index: game.valid_moves[i],
-// 				board: new_game.board.slice(0),
-// 				skipped_turn: false
-// 			};
-// 		}
-// 	}
-
-// 	// We do this here, rather than before, as if we skip a turn the result will be different.
-// 	var new_maximizing = (new_game.active_player === this.player);
-
-// 	if(this.graph)
-// 		graph_point.maximizing = new_maximizing;
-
-// 	return {new_game: new_game, new_depth: new_depth, new_maximizing: new_maximizing, graph_point: graph_point};
-// }
-
-// AIMinimaxController.prototype.minimax_calculatebest = function(weights, maximizing) {
-// 	var best_move_indexs = {};
-// 	var best_weight;
-
-// 	if(maximizing)
-// 		best_weight = this.min;
-// 	else
-// 		best_weight = this.max;
-
-// 	for(var i = 0; i < weights.length; i++) {
-// 		if((maximizing && weights[i] >= best_weight) ||
-// 			(!maximizing && weights[i] <= best_weight)) {
-
-// 			best_weight = weights[i];
-
-
-// 			if(!best_move_indexs[best_weight])
-// 				best_move_indexs[best_weight] = [];
-
-// 			best_move_indexs[best_weight].push(i);
-// 		}
-
-// 	}
-
-// 	this.valid_move_weights = weights;
-// 	this.best_move_weight = best_weight;
-
-// 	var move_indexes = best_move_indexs[best_weight];
-
-// 	this.best_move_index = this.tiebreak_method(move_indexes);
-
-// 	return {weight: best_weight};
-// };
 
 AIMinimaxController.prototype.minimax_finalize = function(res) {
 	this.graph_points = {
@@ -354,33 +165,20 @@ AIMinimaxController.prototype.minimax_finalize = function(res) {
 	this.do_move();
 }
 
-// AIMinimaxController.prototype.get_weight_def = function(game) {
-// 	if(game.finished()) {
-// 		if(game.winner === this.player)
-// 			return this.max;
-// 		else if(game.winner === null)
-// 			return 0; // A draw is considered slightly more favorable to a loss.
-// 		else
-// 			return this.min;
-// 	} else {
-// 		return this.get_weight(game);
-// 	}
-// };
-
 AIMinimaxController.prototype.draw_options = function(options_container) {
 	var self = this;
 	options_container.empty();
 
 	var search_depth =
 		$("<label>").text("Search Depth: ").append(
-			$("<input>", {value: self.depth, type: "number", min: 1}).on('blur', function(){
-				self.depth = parseInt($(this).val());
+			$("<input>", {value: self.options.depth, type: "number", min: 1}).on('blur', function(){
+				self.options.depth = parseInt($(this).val());
 				
-				if(isNaN(self.depth)) {
-					self.depth = self.default_depth;
+				if(isNaN(self.options.depth)) {
+					self.options.depth = self.options.default_depth;
 				}
 
-				$(this).val(self.depth);
+				$(this).val(self.options.depth);
 
 				self.recalc();	
 			})
@@ -396,10 +194,9 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 		weight_method.append('<option value="'+v+'">'+func.name+'</option>');
 	}
 
-	weight_method.on("change", function(e) {
+	weight_method.val(this.options.weighting_function_key).on("change", function(e) {
 		var func_key = $(this).val();
-		self.get_weight = Minimax_weight_functions[func_key].func;
-		self.weighting_function_key = func_key;
+		self.options.weighting_function_key = func_key;
 		self.recalc();
 	});
 
@@ -417,10 +214,9 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 		tiebreak_method.append('<option value="'+v+'">'+func.name+'</option>');
 	}
 
-	tiebreak_method.on("change", function(e) {
+	tiebreak_method.val(this.options.tiebreak_method_key).on("change", function(e) {
 		var func_key = $(this).val();
-		self.tiebreak_method = Minimax_tiebreak_functions[func_key].func;
-		self.tiebreak_method_key = func_key;
+		self.options.tiebreak_method_key = func_key;
 		self.recalc();
 	});
 
@@ -432,8 +228,8 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 	tiebreak_method = $("<div>", {class: "form_group"}).append(tiebreak_method);
 
 	var pause_until_key = $("<label>").text("Wait for Enter to Move").append(
-		$("<input>", {type: "checkbox"}).prop('checked', this.pause_until_key).on('change', function(){
-			self.pause_until_key = $(this).prop('checked');
+		$("<input>", {type: "checkbox"}).prop('checked', this.options.pause_until_key).on('change', function(){
+			self.options.pause_until_key = $(this).prop('checked');
 			self.recalc();
 		})
 	);
@@ -441,34 +237,17 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 	pause_until_key = $("<div>", {class: "form_group"}).append(pause_until_key);
 
 	var thread_minimax = $("<label>").text("Thread Calculations").append(
-		$("<input>", {type: "checkbox"}).prop('checked', this.thread_minimax).on('change', function(){
-			self.thread_minimax = $(this).prop('checked');
+		$("<input>", {type: "checkbox"}).prop('checked', this.options.thread_minimax).on('change', function(){
+			self.options.thread_minimax = $(this).prop('checked');
 			self.recalc();
 		})
 	);
 
 	thread_minimax = $("<div>", {class: "form_group"}).append(thread_minimax);
 
-	var thread_breakpoint =
-		$("<label>").text("Thread if depth > ").append(
-			$("<input>", {value: self.thread_breakpoint, type: "number", min: 1}).on('blur', function(){
-				self.thread_breakpoint = parseInt($(this).val());
-				
-				if(isNaN(self.depth)) {
-					self.thread_breakpoint = self.default_thread_breakpoint;
-				}
-
-				$(this).val(self.thread_breakpoint);
-
-				self.recalc();	
-			})
-		);
-
-	thread_breakpoint = $("<div>", {class: "form_group"}).append(thread_breakpoint);
-
 	var alpha_beta = $("<label>").text("Alpha Beta Pruning:").append(
-		$("<input>", {type: "checkbox"}).prop('checked', this.alpha_beta).on('change', function(){
-			self.alpha_beta = $(this).prop('checked');
+		$("<input>", {type: "checkbox"}).prop('checked', this.options.alpha_beta).on('change', function(){
+			self.options.alpha_beta = $(this).prop('checked');
 			self.recalc();
 		})
 	);
@@ -476,17 +255,53 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 	alpha_beta = $("<div>", {class: "form_group"}).append(alpha_beta);
 
 	var recursive_deepening = $("<label>").text("Recursive Deepening:").append(
-		$("<input>", {type: "checkbox"}).prop('checked', this.recursive_deepening).on('change', function(){
-			self.recursive_deepening = $(this).prop('checked');
+		$("<input>", {type: "checkbox"}).prop('checked', this.options.recursive_deepening).on('change', function(){
+			self.options.recursive_deepening = $(this).prop('checked');
 			self.recalc();
 		})
 	);
 
 	recursive_deepening = $("<div>", {class: "form_group"}).append(recursive_deepening);
 
+	var alpha_beta_rr_depths =
+		$("<label>").text("Recursive Deepening Depths: ").append(
+			$("<input>", {value: self.options.alpha_beta_rd_depths.join(","), type: "text"}).on('blur', function(){
+				var arr = $(this).val().split(",");
+				
+				for(var i = 0; i < arr.length; i++) {
+					arr[i] = parseInt(arr[i]);
+				}
+
+				self.options.alpha_beta_rd_depths = arr;
+				self.options.alpha_beta_rd_rr_depths = arr;
+
+				self.recalc();	
+			})
+		);
+
+	alpha_beta_rr_depths = $("<div>", {class: "form_group"}).append(alpha_beta_rr_depths);
+
+	var alpha_beta_gto = $("<label>").html("Use &alpha; > &beta; (vs. &alpha; >= &beta;)").append(
+		$("<input>", {type: "checkbox"}).prop('checked', this.options.alpha_beta_gto).on('change', function(){
+			self.options.alpha_beta_gto = $(this).prop('checked');
+			self.recalc();
+		})
+	);
+
+	alpha_beta_gto = $("<div>", {class: "form_group"}).append(alpha_beta_gto);
+
+	var alpha_beta_rr = $("<label>").html("A-B Reroot").append(
+		$("<input>", {type: "checkbox"}).prop('checked', this.options.alpha_beta_rr).on('change', function(){
+			self.options.alpha_beta_rr = $(this).prop('checked');
+			self.recalc();
+		})
+	);
+
+	alpha_beta_rr = $("<div>", {class: "form_group"}).append(alpha_beta_rr);
+
 	var graph = $("<label>").text("Graph Search").append(
-		$("<input>", {type: "checkbox"}).prop('checked', this.graph).on('change', function(){
-			self.graph = $(this).prop('checked');
+		$("<input>", {type: "checkbox"}).prop('checked', this.options.graph).on('change', function(){
+			self.options.graph = $(this).prop('checked');
 			self.recalc();
 		})
 	);
@@ -494,15 +309,15 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 	graph = $("<div>", {class: "form_group"}).append(graph);
 
 	var record_counts = $("<label>").text("Log Counts").append(
-		$("<input>", {type: "checkbox"}).prop('checked', this.record_counts).on('change', function(){
-			self.record_counts = $(this).prop('checked');
+		$("<input>", {type: "checkbox"}).prop('checked', this.options.record_counts).on('change', function(){
+			self.options.record_counts = $(this).prop('checked');
 			self.recalc();
 		})
 	);
 
 	record_counts = $("<div>", {class: "form_group"}).append(record_counts);
 
-	options_container.append(search_depth, weight_method, tiebreak_method, pause_until_key, thread_minimax, alpha_beta, recursive_deepening/*, thread_breakpoint*/, graph, record_counts);
+	options_container.append(search_depth, weight_method, tiebreak_method, pause_until_key, thread_minimax, alpha_beta, recursive_deepening, alpha_beta_rr_depths, alpha_beta_gto, alpha_beta_rr, graph, record_counts);
 };
 
 AIMinimaxController.prototype.draw_board = function() {
@@ -527,7 +342,7 @@ AIMinimaxController.prototype.draw_board = function() {
 };
 
 AIMinimaxController.prototype.keypress = function(ev) {
-	if(this.pause && this.pause_until_key && this.best_move !== null && this.best_move !== undefined)
+	if(this.options.pause && this.options.pause_until_key && this.best_move !== null && this.best_move !== undefined)
 		this.take_best_move();
 };
 
@@ -553,9 +368,6 @@ AIMinimaxController.prototype.destroy = function() {
 
 AIMinimaxController.prototype.create_worker = function() {
 	var worker = new Worker("<%= asset_path "workers/ai_minimax.js" %>");
-	worker.onerror = function(error) {
-		throw error;
-	};
 	var self = this;
 	worker.onmessage = function(event) {
 		self.recieve_message(event);
@@ -564,13 +376,26 @@ AIMinimaxController.prototype.create_worker = function() {
 	return worker;
 };
 
+AIMinimaxController.prototype.minimax_instance = function() {
+	return new Minimax(this.player, {
+		alpha_beta: this.options.alpha_beta,
+		alpha_beta_gto: this.options.alpha_beta_gto,
+		record_path: (this.options.graph || this.options.record_counts),
+		tiebreak: Minimax_tiebreak_functions[this.options.tiebreak_method_key].func,
+		get_weight: Minimax_weight_functions[this.options.weighting_function_key].func
+	});
+};
+
 AIMinimaxController.prototype.recieve_message = function(event) {
 	var data = event.data;
 	var maximizing = true;
 
+	if(data.check_num != this.results_check_num)
+		return;
+
 	this.results_queue[data.index] = data.weight;
 
-	if(this.graph) {
+	if(this.options.graph || this.options.record_counts) {
 		this.graph_points[data.index].weight = data.weight;
 		this.graph_points[data.index].subtree = data.graph_points;
 	}
@@ -581,8 +406,25 @@ AIMinimaxController.prototype.recieve_message = function(event) {
 		return;
 	}
 
-	var res = this.minimax_calculatebest(this.results_queue, true);
+	var res = this.minimax_instance().get_best(this.results_queue, true);
 
 	res.graph_points = this.graph_points;
 	this.minimax_finalize(res);
+};
+
+AIMinimaxController.prototype.toString = function() {
+	// Name | Version | Reserved | Reserved | Vars
+	return "AIMinimaxController|0.0|||" + 
+		"alpha_beta:" + this.options.alpha_beta + ";" + 
+		"alpha_beta_gto:" + this.options.alpha_beta_gto + ";" + 
+		"alpha_beta_rr:" + this.options.alpha_beta_rr + ";" +
+		"thread_minimax:" + this.options.thread_minimax + ";" + 
+		"recursive_deepening:" + this.options.recursive_deepening + ";" +
+		"max_workers:" + this.options.max_workers + ";" + 
+		"weighting_function_key:" + this.options.weighting_function_key + ";" +
+		"tiebreak_method_key:" + this.options.tiebreak_method_key + ";" +
+		"depth:" + this.options.depth + ";" +
+		"default_depth:" + this.options.default_depth + ";" +
+		"alpha_beta_rd_depths:" + this.options.alpha_beta_rd_depths + ";" +
+		"alpha_beta_rd_rr_depths:" + this.options.alpha_beta_rd_rr_depths + ";";
 };
