@@ -1,4 +1,5 @@
 importScripts(
+	"/assets/vars.js",
 	"/assets/game.js",
 	"/assets/minimax.js"
 );
@@ -9,34 +10,55 @@ onmessage = function(event) {
 	game.set_internal_state(data.game);
 	game.process_board();
 
+	var new_game = game;
+
 	var options = data.options;
 
 	var minimax = new Minimax(data.player, {
 		alpha_beta: options.alpha_beta,
-		alpha_beta_gto: options.alpha_beta_gto,
 		record_path: (options.graph || options.record_counts),
 		tiebreak: Minimax_tiebreak_functions[options.tiebreak_method_key].func,
-		get_weight: Minimax_weight_functions[options.weighting_function_key].func
+		get_weight: Minimax_weight_functions[options.weighting_function_key].func,
+		get_endgame_weight: Minimax_endgame_weight_functions[options.endgame_weighting_function_key].func,
+		recursive_depth_trim_max: options.recursive_depth_trim_max,
+		track_permutations: options.track_permutations
 	});
 
 	var minimax_result;
 	var depth = options.depth-1;
 
+	var self = this;
 	if(options.alpha_beta_rr) {
 		if(options.recursive_deepening) {
-			minimax_result = minimax.minimax_rr(game, depth, (game.player === data.player), -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
-				return minimax.minimax_rd(game, depth, maximizing, alpha, beta, [2,4]);
+			minimax_result = minimax.minimax_rr(new_game, depth, (game.player === data.player), -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
+				return minimax.minimax_rd(game, depth, maximizing, alpha, beta, options.alpha_beta_rd_rr_depths);
 			});
 		} else {
-			minimax_result = minimax.minimax_rr(game, depth, (game.player === data.player), -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
+			minimax_result = minimax.minimax_rr(new_game, depth, (game.player === data.player), -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
 				return minimax.minimax(game, depth, maximizing, alpha, beta);
 			});
 		}
 	} else if (options.recursive_deepening) {
-		minimax_result = minimax.minimax_rd(game, depth, (game.player === data.player), -Infinity, Infinity, [2,4]);
+		minimax_result = minimax.minimax_rd(new_game, depth, (game.player === data.player), -Infinity, Infinity, options.alpha_beta_rd_depths);
 	} else {
-		minimax_result = minimax.minimax(game, depth, (game.player === data.player), -Infinity, Infinity);
+		minimax_result = minimax.minimax(new_game, depth, (game.player === data.player), -Infinity, Infinity);
 	}
+
+	// if(options.alpha_beta_rr) {
+	// 	if(options.recursive_deepening) {
+	// 		minimax_result = minimax.minimax_rr(game, depth, (game.player === data.player), -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
+	// 			return minimax.minimax_rd(game, depth, maximizing, alpha, beta, [2,4]);
+	// 		});
+	// 	} else {
+	// 		minimax_result = minimax.minimax_rr(game, depth, (game.player === data.player), -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
+	// 			return minimax.minimax(game, depth, maximizing, alpha, beta);
+	// 		});
+	// 	}
+	// } else if (options.recursive_deepening) {
+	// 	minimax_result = minimax.minimax_rd(game, depth, (game.player === data.player), -Infinity, Infinity, [2,4]);
+	// } else {
+	// 	minimax_result = minimax.minimax(game, depth, (game.player === data.player), -Infinity, Infinity);
+	// }
 
 	postMessage({
 		valid_moves: game.valid_moves,

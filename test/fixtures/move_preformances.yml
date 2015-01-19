@@ -1,0 +1,13 @@
+# Read about fixtures at http://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+one:
+  move: 1
+  time: 1
+  controller_id: 1
+  match_result: 1
+
+two:
+  move: 1
+  time: 1
+  controller_id: 1
+  match_result: 1

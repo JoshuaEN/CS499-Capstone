@@ -1,3 +1,5 @@
+//= require vars.js
+
 $(function() {
 
 	window.game = new GameRender(window.BOARD_SIZE);

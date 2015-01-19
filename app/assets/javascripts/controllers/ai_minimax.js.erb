@@ -6,22 +6,41 @@ var AIMinimaxController = function(game, player, options) {
 
 	this.options = {
 		alpha_beta: true,
-		alpha_beta_gto: false,
-		alpha_beta_rr: true,
+		alpha_beta_rr: false,
 		graph: false,
 		record_counts: false,
-		thread_minimax: false,
+		thread_minimax: true,
 		recursive_deepening: false,
+		recursive_depth_trim_max: 999,
 		max_workers: 8,
 		preload_n_workers: 8,
 		pause: true,
 		pause_until_key: true,
 		weighting_function_key: "basic",
-		tiebreak_method_key: "rand",
-		depth: 2,
-		default_depth: 2,
+		endgame_weighting_function_key: "disk_maximizing",
+		tiebreak_method_key: "weight",
+		depth: 7,
+		default_depth: 4,
 		alpha_beta_rd_depths: [2,4],
-		alpha_beta_rd_rr_depths: [1,3]
+		alpha_beta_rd_rr_depths: [1,3],
+		trim_moves: true,
+		trim_target: 3,
+		trim_test_depth: 2,
+		depth_scaling: true,
+		depth_scaling_values: {
+			11: 8,
+			10: 8,
+			9: 12,
+			8: 12,
+			7: 12,
+			6: 12,
+			5: 12,
+			4: 12,
+			3: 12,
+			2: 12,
+			1: 12
+		},
+		track_permutations: true
 	}
 
 	options = options || {};
@@ -39,8 +58,8 @@ var AIMinimaxController = function(game, player, options) {
 
 	var self = this;
 
-	this.max = Infinity;
-	this.min = -Infinity;
+	this.min = MIN_VALUE;
+	this.max = MAX_VALUE;
 
 	this.results_check_num = 0;
 
@@ -80,10 +99,83 @@ AIMinimaxController.prototype.play_foward = function() {
 };
 
 AIMinimaxController.prototype.minimax_start = function(game, depth) {
-
+	//var now = Date.now();
 	var minimax = this.minimax_instance();
 
 	var minimax_result;
+
+	var new_game = game.dup();
+	var missed_moves = [];
+	var trim_moves = this.options.trim_moves;
+
+	if(trim_moves === true) {
+		var trim_target = this.options.trim_target;
+		var trim_test_depth = this.options.trim_test_depth;
+
+		var trim_minimax_result = minimax.minimax_rr(new_game, trim_test_depth, true, -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
+			return minimax.minimax(game, depth, maximizing, alpha, beta);
+		});
+
+		var weights = trim_minimax_result.valid_move_weights.slice(0);
+		weights.sort(function(x,y) {return y - x;});
+
+		var mapped_weights = {};
+
+		for(var i = 0; i < trim_minimax_result.valid_move_weights.length; i++) {
+			var move_weight = trim_minimax_result.valid_move_weights[i];
+			var move_index = new_game.valid_moves[i];
+
+			if(mapped_weights[move_weight] === undefined)
+				mapped_weights[move_weight] = [];
+
+			mapped_weights[move_weight].push(i);
+		}
+
+		var uniq_weights = weights.filter(function(item, pos, self) {
+    		return self.indexOf(item) == pos;
+		});
+
+		var new_valid_moves = [];
+
+		for(var i = 0; i < uniq_weights.length; i++) {
+			var weight = uniq_weights[i];
+			var moves = mapped_weights[weight];
+
+			if(new_valid_moves.length >= trim_target) {
+				for(var j = 0; j < moves.length; j++)
+					missed_moves.push(new_game.valid_moves[moves[j]]);
+
+			} else if((new_valid_moves.length + moves.length) > trim_target) {
+				do {
+					var idx = Minimax_tiebreak_functions.weight.func(moves, {game: new_game});
+					moves.splice(moves.indexOf(idx), 1);
+					new_valid_moves.push(new_game.valid_moves[idx]);
+
+				} while(new_valid_moves.length < trim_target)
+
+				for(var j = 0; j < moves.length; j++)
+					missed_moves.push(new_game.valid_moves[moves[j]]);
+
+			} else {
+				for(var j = 0; j < moves.length; j++) {
+					new_valid_moves.push(new_game.valid_moves[moves[j]]);
+				}
+			}
+		}
+
+		new_game.valid_moves = new_valid_moves;
+
+	}
+
+	var depth = this.options.depth;
+
+	if(this.options.depth_scaling) {
+		var scaling_value = this.options.depth_scaling_values[new_game.get_counts()[null]];
+
+		if(scaling_value !== undefined) {
+			depth = scaling_value;
+		}
+	}
 
 	if(this.options.thread_minimax) {
 		var self = this;
@@ -91,11 +183,14 @@ AIMinimaxController.prototype.minimax_start = function(game, depth) {
 		this.results_queue = [];
 		this.results_count = 0;
 		this.results_check_num += 1;
+		this.results_trim_moves = trim_moves;
+		this.results_missed_moves = missed_moves;
+		this.results_game = new_game;
 		this.graph_points = {};
 
-		for(var i = 0; i < this.game.valid_moves.length; i++) {
+		for(var i = 0; i < new_game.valid_moves.length; i++) {
 
-			var loop_pre_res = minimax.loop_pre(i, this.game, this.depth);
+			var loop_pre_res = minimax.loop_pre(i, new_game, depth);
 
 			this.graph_points[i] = loop_pre_res.graph_point;
 
@@ -119,22 +214,48 @@ AIMinimaxController.prototype.minimax_start = function(game, depth) {
 		var self = this;
 		if(this.options.alpha_beta_rr) {
 			if(this.options.recursive_deepening) {
-				minimax_result = minimax.minimax_rr(this.game, this.options.depth, true, -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
+				minimax_result = minimax.minimax_rr(new_game, depth, true, -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
 					return minimax.minimax_rd(game, depth, maximizing, alpha, beta, self.options.alpha_beta_rd_rr_depths);
 				});
 			} else {
-				minimax_result = minimax.minimax_rr(this.game, this.options.depth, true, -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
+				minimax_result = minimax.minimax_rr(new_game, depth, true, -Infinity, Infinity, function(game, depth, maximizing, alpha, beta) {
 					return minimax.minimax(game, depth, maximizing, alpha, beta);
 				});
 			}
 		} else if (this.options.recursive_deepening) {
-			minimax_result = minimax.minimax_rd(this.game, this.options.depth, true, -Infinity, Infinity, this.options.alpha_beta_rd_depths);
+			minimax_result = minimax.minimax_rd(new_game, depth, true, -Infinity, Infinity, this.options.alpha_beta_rd_depths);
 		} else {
-			minimax_result = minimax.minimax(this.game, this.options.depth, true, -Infinity, Infinity);
+			minimax_result = minimax.minimax(new_game, depth, true, -Infinity, Infinity);
+		}
+
+		// Resort correctly.
+		if(trim_moves === true) {
+			var original_moves = new_game.valid_moves.concat(missed_moves);
+			var sortable = [];
+
+			for(var i = 0; i < original_moves.length; i++) {
+				if(minimax_result.valid_move_weights[i] === undefined) {
+					minimax_result.valid_move_weights[i] = null;
+				}
+				sortable.push([original_moves[i], minimax_result.valid_move_weights[i], minimax_result.best_move_index === i]);
+			}
+
+			sortable.sort(function(x,y){return x[0] - y[0]});
+
+			for(var i = 0; i < sortable.length; i++) {
+				minimax_result.valid_move_weights[i] = sortable[i][1];
+
+				if(sortable[i][2] === true) {
+					minimax_result.best_move_index = i;
+				}
+			}
 		}
 
 		this.minimax_finalize(minimax_result);
 	}
+
+	//var after_now = Date.now();
+	//console.log(after_now - now);
 	return;
 }
 
@@ -207,6 +328,27 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 
 	weight_method = $("<div>", {class: "form_group"}).append(weight_method);
 
+	var endgame_weight_method = $("<select>");
+
+
+	for(var v in Minimax_endgame_weight_functions) {
+		var func = Minimax_endgame_weight_functions[v];
+		endgame_weight_method.append('<option value="'+v+'">'+func.name+'</option>');
+	}
+
+	endgame_weight_method.val(this.options.endgame_weighting_function_key).on("change", function(e) {
+		var func_key = $(this).val();
+		self.options.endgame_weighting_function_key = func_key;
+		self.recalc();
+	});
+
+	endgame_weight_method =	
+		$("<label>").text("Endgame Weight Method: ").append(
+			endgame_weight_method
+		);
+
+	endgame_weight_method = $("<div>", {class: "form_group"}).append(endgame_weight_method);
+
 	var tiebreak_method = $("<select>");
 
 	for(var v in Minimax_tiebreak_functions) {
@@ -263,32 +405,41 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 
 	recursive_deepening = $("<div>", {class: "form_group"}).append(recursive_deepening);
 
+	var recursive_depth_trim_max =
+		$("<label>").text("Recursive Depth Trim Max: ").append(
+			$("<input>", {value: self.options.recursive_depth_trim_max, type: "number", min: 1}).on('blur', function(){
+				self.options.recursive_depth_trim_max = parseInt($(this).val());
+				
+				if(isNaN(self.options.recursive_depth_trim_max)) {
+					self.options.recursive_depth_trim_max = 999;
+				}
+
+				$(this).val(self.options.recursive_depth_trim_max);
+
+				self.recalc();	
+			})
+		);
+
+	recursive_depth_trim_max = $("<div>", {class: "form_group"}).append(recursive_depth_trim_max);
+
 	var alpha_beta_rr_depths =
 		$("<label>").text("Recursive Deepening Depths: ").append(
 			$("<input>", {value: self.options.alpha_beta_rd_depths.join(","), type: "text"}).on('blur', function(){
 				var arr = $(this).val().split(",");
-				
+				var arr2 = [];
 				for(var i = 0; i < arr.length; i++) {
 					arr[i] = parseInt(arr[i]);
+					arr2[i] = arr[i]-1;
 				}
 
 				self.options.alpha_beta_rd_depths = arr;
-				self.options.alpha_beta_rd_rr_depths = arr;
+				self.options.alpha_beta_rd_rr_depths = arr2;
 
 				self.recalc();	
 			})
 		);
 
 	alpha_beta_rr_depths = $("<div>", {class: "form_group"}).append(alpha_beta_rr_depths);
-
-	var alpha_beta_gto = $("<label>").html("Use &alpha; > &beta; (vs. &alpha; >= &beta;)").append(
-		$("<input>", {type: "checkbox"}).prop('checked', this.options.alpha_beta_gto).on('change', function(){
-			self.options.alpha_beta_gto = $(this).prop('checked');
-			self.recalc();
-		})
-	);
-
-	alpha_beta_gto = $("<div>", {class: "form_group"}).append(alpha_beta_gto);
 
 	var alpha_beta_rr = $("<label>").html("A-B Reroot").append(
 		$("<input>", {type: "checkbox"}).prop('checked', this.options.alpha_beta_rr).on('change', function(){
@@ -298,6 +449,67 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 	);
 
 	alpha_beta_rr = $("<div>", {class: "form_group"}).append(alpha_beta_rr);
+
+	var trim_moves = $("<label>").text("Trim Moves").append(
+		$("<input>", {type: "checkbox"}).prop('checked', this.options.trim_moves).on('change', function(){
+			self.options.trim_moves = $(this).prop('checked');
+			self.recalc();
+		})
+	);
+
+	trim_moves = $("<div>", {class: "form_group"}).append(trim_moves);
+
+	var trim_target =
+		$("<label>").text("Trim to: ").append(
+			$("<input>", {value: self.options.trim_target, type: "number", min: 1}).on('blur', function(){
+				self.options.trim_target = parseInt($(this).val());
+				
+				if(isNaN(self.options.trim_target)) {
+					self.options.trim_target = 3;
+				}
+
+				$(this).val(self.options.trim_target);
+
+				self.recalc();	
+			})
+		);
+
+	trim_target = $("<div>", {class: "form_group"}).append(trim_target);
+
+	var trim_test_depth =
+		$("<label>").text("Trim test depth: ").append(
+			$("<input>", {value: self.options.trim_test_depth, type: "number", min: 1}).on('blur', function(){
+				self.options.trim_test_depth = parseInt($(this).val());
+				
+				if(isNaN(self.options.trim_test_depth)) {
+					self.options.trim_test_depth = 3;
+				}
+
+				$(this).val(self.options.trim_test_depth);
+
+				self.recalc();	
+			})
+		);
+
+	trim_test_depth = $("<div>", {class: "form_group"}).append(trim_test_depth);
+
+	var depth_scaling = $("<label>").text("Endgame Depth Scaling:").append(
+		$("<input>", {type: "checkbox"}).prop('checked', this.options.depth_scaling).on('change', function(){
+			self.options.depth_scaling = $(this).prop('checked');
+			self.recalc();
+		})
+	);
+
+	depth_scaling = $("<div>", {class: "form_group"}).append(depth_scaling);
+
+	var track_permutations = $("<label>").text("Track Permutations:").append(
+		$("<input>", {type: "checkbox"}).prop('checked', this.options.track_permutations).on('change', function(){
+			self.options.track_permutations = $(this).prop('checked');
+			self.recalc();
+		})
+	);
+
+	track_permutations = $("<div>", {class: "form_group"}).append(track_permutations);
 
 	var graph = $("<label>").text("Graph Search").append(
 		$("<input>", {type: "checkbox"}).prop('checked', this.options.graph).on('change', function(){
@@ -317,7 +529,25 @@ AIMinimaxController.prototype.draw_options = function(options_container) {
 
 	record_counts = $("<div>", {class: "form_group"}).append(record_counts);
 
-	options_container.append(search_depth, weight_method, tiebreak_method, pause_until_key, thread_minimax, alpha_beta, recursive_deepening, alpha_beta_rr_depths, alpha_beta_gto, alpha_beta_rr, graph, record_counts);
+	options_container.append(
+		search_depth, 
+		weight_method,
+		endgame_weight_method,
+		tiebreak_method, 
+		pause_until_key, 
+		thread_minimax, 
+		alpha_beta,
+		depth_scaling,
+		recursive_deepening,
+		recursive_depth_trim_max, 
+		alpha_beta_rr_depths, 
+		alpha_beta_rr, 
+		trim_moves,
+		trim_target,
+		trim_test_depth,
+		track_permutations,
+		graph, 
+		record_counts);
 };
 
 AIMinimaxController.prototype.draw_board = function() {
@@ -379,10 +609,12 @@ AIMinimaxController.prototype.create_worker = function() {
 AIMinimaxController.prototype.minimax_instance = function() {
 	return new Minimax(this.player, {
 		alpha_beta: this.options.alpha_beta,
-		alpha_beta_gto: this.options.alpha_beta_gto,
 		record_path: (this.options.graph || this.options.record_counts),
 		tiebreak: Minimax_tiebreak_functions[this.options.tiebreak_method_key].func,
-		get_weight: Minimax_weight_functions[this.options.weighting_function_key].func
+		get_weight: Minimax_weight_functions[this.options.weighting_function_key].func,
+		get_endgame_weight: Minimax_endgame_weight_functions[this.options.endgame_weighting_function_key].func,
+		recursive_depth_trim_max: this.options.recursive_depth_trim_max,
+		track_permutations: this.options.track_permutations
 	});
 };
 
@@ -402,21 +634,44 @@ AIMinimaxController.prototype.recieve_message = function(event) {
 
 	this.results_count += 1;
 
-	if(this.results_count !== this.game.valid_moves.length) {
+	if(this.results_count !== this.results_game.valid_moves.length) {
 		return;
 	}
 
-	var res = this.minimax_instance().get_best(this.results_queue, true);
+	var res = this.minimax_instance().get_best(this.results_queue, true, {game: this.results_game});
 
 	res.graph_points = this.graph_points;
+
+
+	if(this.results_trim_moves === true) {
+		var original_moves = this.results_game.valid_moves.concat(this.results_missed_moves);
+		var sortable = [];
+
+		for(var i = 0; i < original_moves.length; i++) {
+			if(res.valid_move_weights[i] === undefined) {
+				res.valid_move_weights[i] = null;
+			}
+			sortable.push([original_moves[i], res.valid_move_weights[i], res.best_move_index === i]);
+		}
+
+		sortable.sort(function(x,y){return x[0] - y[0]});
+
+		for(var i = 0; i < sortable.length; i++) {
+			res.valid_move_weights[i] = sortable[i][1];
+
+			if(sortable[i][2] === true) {
+				res.best_move_index = i;
+			}
+		}
+	}
+
 	this.minimax_finalize(res);
 };
 
 AIMinimaxController.prototype.toString = function() {
 	// Name | Version | Reserved | Reserved | Vars
-	return "AIMinimaxController|0.0|||" + 
+	return "AIMinimaxController|0.6|||" + 
 		"alpha_beta:" + this.options.alpha_beta + ";" + 
-		"alpha_beta_gto:" + this.options.alpha_beta_gto + ";" + 
 		"alpha_beta_rr:" + this.options.alpha_beta_rr + ";" +
 		"thread_minimax:" + this.options.thread_minimax + ";" + 
 		"recursive_deepening:" + this.options.recursive_deepening + ";" +
@@ -426,5 +681,13 @@ AIMinimaxController.prototype.toString = function() {
 		"depth:" + this.options.depth + ";" +
 		"default_depth:" + this.options.default_depth + ";" +
 		"alpha_beta_rd_depths:" + this.options.alpha_beta_rd_depths + ";" +
-		"alpha_beta_rd_rr_depths:" + this.options.alpha_beta_rd_rr_depths + ";";
+		"alpha_beta_rd_rr_depths:" + this.options.alpha_beta_rd_rr_depths + ";" +
+		"recursive_depth_trim_max:" + this.options.recursive_depth_trim_max + ";" + 
+		"trim_moves:" + this.options.trim_moves + ";" +
+		"trim_target:" + this.options.trim_target + ";" +
+		"trim_test_depth:" + this.options.trim_test_depth + ";" +
+		"endgame_weighting_function_key:" + this.options.endgame_weighting_function_key + ";" + 
+		"depth_scaling:" + this.options.depth_scaling + ";" +
+		"depth_scaling_values:" + JSON.stringify(this.options.depth_scaling_values) + ";" +
+		"track_permutations:" + this.options.track_permutations + ";";
 };

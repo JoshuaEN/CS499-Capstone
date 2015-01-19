@@ -1,4 +1,5 @@
 importScripts(
+	"/assets/vars.js",
 	"/assets/game.js",
 	"/assets/controllers/ai_minimax.js",
 	"/assets/minimax.js"
@@ -33,13 +34,13 @@ onmessage = function(event) {
 			var p1_disks = counts[1];
 			var winner = game.winner;
 			var final_board_state = game.board.toString();
-
+			console.log(winner);
 			var fd = new FormData();
 			fd.append('p0_controller', p0_controller);
 			fd.append('p0_disks', p0_disks);
 			fd.append('p1_controller', p1_controller);
 			fd.append('p1_disks', p1_disks);
-			fd.append('winner', winner);
+			fd.append('winner', winner + "");
 			fd.append('final_board_state', final_board_state);
 			fd.append('board_size', game.board_size);
 

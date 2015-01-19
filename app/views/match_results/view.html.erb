@@ -5,6 +5,23 @@
 	%>
 	<%= stylesheet_link_tag 'application.css' %>
 
+	<style type="text/css">
+		td {
+			padding: 5px;
+		}
+
+		tr:nth-child(even) {
+			background: white;
+		}
+
+		tr:nth-child(odd) {
+			background: #DFDFDF;
+		}
+
+		.text-muted {
+			color: #939393;
+		}
+	</style>
 	<script type="text/javascript" src="https://www.google.com/jsapi"></script>
 	<script type="text/javascript">
 		google.load('visualization', '1', {packages: ['orgchart']});
@@ -39,4 +56,5 @@
 			</div>
 		</div>
 	</div>
+	<div id="listings"></div>
 </body>

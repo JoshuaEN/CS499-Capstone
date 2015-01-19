@@ -69,12 +69,14 @@ GameRender.prototype.setup_renderer = function() {
 	this.board_grids = [];
 	this.board_grid_disks = [];
 	this.board_grid_text = [];
+	this.board_grid_bottom_text = [];
 
 	var self = this;
 
 	for(var i = 0; i < this.board_size*this.board_size; i++) {
 		var grid_disk_elm = $("<div>", {class: "disk disk_null"});
 		var grid_text_elm = $("<span>", {class: "grid-text"});
+		var grid_text_bottom_elm = $("<span>", {class: "grid-text-bottom"});
 
 		var grid_elm = $("<div>", 
 		{
@@ -82,19 +84,21 @@ GameRender.prototype.setup_renderer = function() {
 			style: 'width:calc('+this.board_cell_width+'% - 10px);padding-bottom:calc('+this.board_cell_width+'% - 10px)',
 			"data-grid-index": i,
 			"data-grid": "true"
-		}).append(grid_disk_elm).append(grid_text_elm).on('click', function(ev) {
+		}).append(grid_disk_elm).append(grid_text_elm, grid_text_bottom_elm).on('click', function(ev) {
 			self.on_grid_click(this, ev);
 		});
 
 		this.board_grids.push(grid_elm);
 		this.board_grid_disks.push(grid_disk_elm);
 		this.board_grid_text.push(grid_text_elm);
+		this.board_grid_bottom_text.push(grid_text_bottom_elm);
 
 		this.board_elm.append(grid_elm);
 	}
 
 	this.grid_elements = $("[data-grid=true]");
 	this.grid_text_elements = $("[data-grid=true] > span.grid-text");
+	this.grid_text_bottom_elements = $("[data-grid=true] > span.grid-text-bottom");
 };
 GameRender.prototype.setup_player_selectors = function() {
 	this.player_selectors_elm = $("[data-player-selector]");
@@ -134,6 +138,49 @@ GameRender.prototype.setup_controls = function() {
 		return false;
 	});
 
+	$("#game_action_runbenchmark").on('click', function() {
+		var start = Date.now();
+		var game = new Game(8);
+		game.fire_events = false;
+
+		var data = {
+			p0: {},
+			p1: {}
+		};
+		
+		data.p0.pause = false;
+		data.p1.pause = false;
+		data.p0.thread_minimax = false;
+		data.p1.thread_minimax = false;
+		data.p0.preload_n_workers = 0;
+		data.p1.preload_n_workers = 0;
+		data.p0.depth_scaling = false;
+		data.p1.depth_scaling = false;
+		data.p0.tiebreak_method_key = "first";
+		data.p1.tiebreak_method_key = "first";
+		data.p0.depth = 4;
+		data.p1.depth = 4;
+		data.p0.trim_moves = false;
+		data.p1.trim_moves = false;
+
+		game.player_controllers = [
+			new AIMinimaxController(game, 0, data.p0),
+			new AIMinimaxController(game, 1, data.p1)
+		];
+
+		var p0_controller = game.player_controllers[0].toString();
+		var p1_controller = game.player_controllers[1].toString();
+
+		for(var i = 0; i < 101; i++) {
+			game.set_game_state("start");
+			game.restart();
+		}
+
+		var end = Date.now();
+
+		alert("Runtime: " + (end-start));
+	})
+
 	$(document).on('keyup', function(ev) {
 		self.on_keypress(ev);
 	});
@@ -170,11 +217,13 @@ GameRender.prototype.restart = function() {
 GameRender.prototype.clean_grid = function() {
 	this.grid_elements.attr("class", "grid").css("background", "");
 	this.grid_text_elements.empty();
+	this.grid_text_bottom_elements.empty();
 };
 
 GameRender.prototype.draw = function() {
 	this.clean_grid();
 
+	this.draw_grid_info();
 	this.highlight_valid_moves();
 
 	// When we're waiting the active player controller doesn't have up to date information.
@@ -186,6 +235,12 @@ GameRender.prototype.draw = function() {
 
 };
 
+GameRender.prototype.draw_grid_info = function() {
+	for(var i = 0; i < this.game.board.length; i++) {
+		this.game.game_renderer.board_grid_bottom_text[i].text(i + "|" + this.game.board_weights[i]);
+	}
+};
+	
 GameRender.prototype.draw_turn_info = function() {
 	if(this.game.finished()) {
 		var counts = this.game.get_counts();
@@ -222,11 +277,17 @@ GameRender.prototype.log_counts = function() {
 GameRender.prototype.recursive_count = function(points, counts) {
 	counts = counts || {
 		endpoints: 0,
-		nodes: 0
+		nodes: 0,
+		found: 0
 	};
+
+	counts.nodes += 1;
 
 	for(var v in points) {
 		var point = points[v];
+
+		if(point.found_via_lookup)
+			counts.found += 1;
 
 		if(point.endpoint  || !point.subtree) {
 			counts.endpoints += 1;
@@ -281,6 +342,10 @@ GameRender.prototype.draw_graph_row = function(points, node_id, parent_id) {
 			'i&alpha; = ' + point.ra + '<br>i&beta; = ' + point.rb + '<br>'+
 			'&alpha; = ' + point.alpha + '<br>&beta; = ' + point.beta + '<br>Halt: ' + point.stopped + '<br>'+
 			'Best Weight: ' + point.weight + '</div>' + this.stringify_board(point.board, this.game.board_size) + '</div>';
+		}
+
+		if(point.found_via_lookup) {
+			formatted += '<div>Found Via Lookup</div>';
 		}
 
 		this.graph_data_list.addRow([{v:cur_node.toString(), 

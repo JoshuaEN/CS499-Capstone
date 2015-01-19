@@ -69,6 +69,14 @@ body {
 	margin: 5px;
 }
 
+.grid-text-bottom {
+	position: absolute;;
+	bottom: 0px;
+	right: 0px;
+	margin: 5px;
+	color: #9E9E9E;
+}
+
 .disk {
 	border-radius: 50%;
 	border: 1px solid black;

@@ -1,0 +1,100 @@
+<table border="1">
+	<tbody>
+
+	<% item_track = []
+		data = {0 => [], 1 => []}
+	 %>
+	<% [0,1].each do |side| %>
+		<%
+			if side == 0
+				base_query = MatchResult.where(p0_controller_id: params[:dark_tester], p1_controller_id: params[:dark_teste].split(','), board_size: params[:size])
+			else
+				base_query = MatchResult.where(p1_controller_id: params[:light_tester], p0_controller_id: params[:light_teste].split(','), board_size: params[:size])
+			end
+
+			headers_base_query = base_query.select(
+					'(p0_disks-p1_disks) as diff,' +
+					'count(*) as times'
+				).group('diff').order('diff desc')
+		%>
+		<% headers_base_query.each do |d| %>
+			<% if side == 0 %>
+				<% diff = d.diff %>
+			<% else %>
+				<% diff = d.diff * -1 %>
+			<% end %>
+
+			<% if item_track.index(diff) == nil %>
+				<% item_track.push diff %>
+			<% end %>
+		<% end %>
+
+		<%
+		
+		if side == 0
+			teste = params[:dark_teste]
+		else
+			teste = params[:light_teste]
+		end
+
+		teste.split(',').each do |p|
+			if side == 0
+				player_base_query = MatchResult.where(p0_controller_id: params[:dark_tester], p1_controller_id: p, board_size: params[:size])
+
+			else
+				player_base_query = MatchResult.where(p1_controller_id: params[:light_tester], p0_controller_id: p, board_size: params[:size])
+			end
+
+			print_vars = {}
+
+			player_base_query.select(
+					'(p0_disks-p1_disks) as diff,' +
+					'count(*) as times'
+				).group('diff').each do |v|
+
+				if side == 0
+					diff = v.diff
+				else
+					diff = v.diff * -1
+				end
+
+				print_vars[diff] = v.times
+			end
+
+			data[side].push([p, print_vars]);
+		end
+		%>
+	<% end %>
+			<tr>
+				<td></td>
+				<% item_track.sort.each do |v| %>
+					<td><%= v %></td>
+				<% end %>
+				<td></td>
+			</tr>
+			<% data.each do |side, sets| %>
+				<% 
+				if side != 0
+					side_info = " Dark"
+				else
+					side_info = " Light"
+				end
+				%>
+				<% sets.each do |arr| %>
+					<%
+						player = arr[0]
+						print_vars = arr[1]
+						total = 0
+					%>
+					<tr>
+						<td><%= player + " as #{side_info}" %></td>
+						<% item_track.sort.each do |k| %>
+							<td><%= print_vars[k] || 0%></td>
+							<% total += print_vars[k] || 0 %>
+						<% end %>
+						<td><%= total %></td>
+					</tr>
+				<% end %>
+			<% end %>
+	</tbody>
+</table>

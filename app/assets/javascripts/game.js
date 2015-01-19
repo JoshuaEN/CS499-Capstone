@@ -22,6 +22,7 @@ var Game = function(board_size, options) {
 	this.board_history = [];
 
 	this.setup_board();
+	this.setup_board_weight_table();
 	
 	this.set_game_state("setup");
 	return this;
@@ -41,6 +42,47 @@ Game.prototype.setup_board = function() {
 	this.tile(board_mid_top_left+1, board_mid_top_left, this.dark_disk);
 	this.tile(board_mid_top_left, board_mid_top_left+1, this.dark_disk);
 	this.tile(board_mid_top_left+1, board_mid_top_left+1, this.light_disk);
+};
+
+Game.prototype.setup_board_weight_table = function() {
+	this.board_weights = [];
+
+	var self = this;
+	var max_pos = this.board_size - 1;
+	var transpose = function(x,y,val) {
+		self.board_weights[self.get_index(x,y)] = val;
+		self.board_weights[self.get_index(x,max_pos-y)] = val;
+		self.board_weights[self.get_index(max_pos-x,y)] = val;
+		self.board_weights[self.get_index(max_pos-x,max_pos-y)] = val;
+	};
+
+	// Weights from http://www.samsoft.org.uk/reversi/strategy.htm
+
+	transpose(0,0,99);
+
+	transpose(1,0,-8);
+	transpose(0,1,-8);
+
+	transpose(2,0,8);
+	transpose(0,2,8);
+
+	transpose(3,0,6);
+	transpose(0,3,6);
+
+	transpose(1,1,-24);
+
+	transpose(2,1,-4);
+	transpose(1,2,-4);
+
+	transpose(3,1,-3);
+	transpose(1,3,-3);
+
+	transpose(3,2,4);
+	transpose(2,3,4);
+
+	transpose(2,2,7);
+
+	transpose(3,3,0);
 };
 
 Game.prototype.copy_state = function(game) {
@@ -76,6 +118,7 @@ Game.prototype.reset = function() {
 	this.setup_board();
 	this.active_player_controller = null;
 	this.active_player = null;
+	this.board_history = [];
 
 	for(var i = 0; i < this.player_controllers.length; i++) {
 		this.player_controllers[i].reset();
@@ -92,6 +135,8 @@ Game.prototype.restart = function() {
 Game.prototype.move = function(index) {
 	if(this.valid_moves.indexOf(index) != -1) {
 		this.place_disk(index);
+		this.board_history.push({player: this.active_player, index: index});
+
 		this.next_turn();
 
 		this.fire('move.valid', {index: index});
@@ -346,7 +391,7 @@ Game.prototype.get_counts = function() {
 	return counts;
 };
 
-Game.prototype.get_stable_counts = function() {
+Game.prototype.get_stable_counts_dp = function() {
 	var counts = {
 		0: 0,
 		1: 0,
@@ -384,6 +429,265 @@ Game.prototype.get_stable_counts = function() {
 
 	return counts;
 }
+
+Game.prototype.get_stable_counts = function() {
+	var counts = {
+		0: 0,
+		1: 0,
+		null: 0
+	};
+
+	var stable_status = {};
+
+	var self = this;
+
+	var check_index = function(x, y, disk) {
+		var i = self.get_index(x,y);
+
+		if(stable_status[i] !== undefined) {
+			return true;
+		} else {
+			//x,y,ours,on_valid, on_all, is_valid
+			var res = self.explore_directions(x,y,disk,null,null, function(x,y,disk,ours) {
+				if(disk === undefined)
+					return true;
+
+				var i = self.get_index(x,y);
+				if(stable_status[i] === ours)
+					return true;
+				else
+					return  false;
+			});
+
+			if( (res.n || res.s) &&
+				(res.e || res.w) &&
+				(res.ne || res.sw) &&
+				(res.nw || res.se)) {
+
+				stable_status[i] = disk;
+				counts[disk] += 1;
+			}
+			
+			return false;
+		}
+	}
+
+	var eval_func = function(x, y, inc_x, inc_y, target) {
+
+		var disk = self.tile(x,y);
+
+		if(disk === null || disk === undefined)
+			return;
+
+		if(target === undefined) {
+			target = disk;
+		}
+
+		if(target !== disk)
+			return;
+
+		check_index(x, y, disk);
+
+		var ix = x, iy = y, idisk;
+		var x_c = 0, y_c = 0;
+		while(true) {
+			ix += inc_x;
+
+			idisk = self.tile(ix, iy);
+
+			if(idisk !== target)
+				break;
+
+			x_c += 1;
+
+			if(check_index(ix, iy, idisk)) {
+				break;
+			}
+		}
+
+		ix = x, iy = y, idisk = undefined;
+		while(true) {
+			iy += inc_y;
+
+			idisk = self.tile(ix, iy);
+
+			if(idisk !== target)
+				break;
+
+			y_c += 1;
+
+			if(check_index(ix, iy, idisk)) {
+				break;
+			}
+		}
+
+		//if(x_c >= 2 && y_c >= 2)
+			return eval_func(x+inc_x, y+inc_y, inc_x, inc_y, target);
+		//else
+		//	return;
+
+	};
+
+	var max_pos = this.board_size-1;
+	eval_func(0,0,1,1);
+	eval_func(0,max_pos,1,-1);
+	eval_func(max_pos,0,-1,1);
+	eval_func(max_pos,max_pos,-1,-1);
+
+	return counts;
+};
+
+Game.prototype.get_region_counts = function() {
+	var regions = {};
+	var tiles = [];
+
+	var region_counter = 0;
+
+	var unexpored_indexes = [];
+
+	for(var i = 0; i < this.board.length; i++) {
+		unexpored_indexes.push(i);
+	}
+
+	var self = this;
+	var explore_region = function (x,y,visited,linked,r) {
+		visited = visited || [];
+		linked = linked || [];
+
+		var offset = 1;
+		var ops = [
+			[offset,0],
+			[offset,offset],
+			[0,offset],
+			[-offset,0],
+			[-offset,-offset],
+			[0,-offset],
+			[-offset,offset],
+			[offset,-offset]
+		];
+
+		for(var i = 0; i < ops.length; i++) {
+			var op = ops[i];
+			var nx = x + op[0];
+			var ny = y + op[1];
+			var idx = self.get_index(nx,ny);
+
+			var board_tile = self.board[idx];
+
+
+			// If we've already visited this index, skip.
+			if(visited.indexOf(idx) !== -1) {
+				continue;
+			}
+			visited.push(idx);
+
+			// If the board tile isn't null, we don't care about it.
+			if(board_tile !== null) {
+				continue;
+			}
+			linked.push(idx);
+
+			var recursive_result = r(nx,ny,visited,linked,r);
+
+			visited.concat(recursive_result.visited);
+			linked.concat(recursive_result.linked);
+		}
+
+		return {linked: linked, visited: visited};
+	};
+
+	var i;
+	while((i = unexpored_indexes.pop()) !== undefined) {
+		var tile = this.board[i];
+
+		tiles[i] = undefined;
+
+		if(tile !== null)
+			continue;
+
+		var xy = this.get_xy(i);
+		var res = explore_region(xy.x,xy.y,[i],[i],explore_region);
+
+		unexpored_indexes = unexpored_indexes.filter(function(elm) {
+			return res.visited.indexOf(elm) === -1;
+		});
+
+		regions[region_counter++] = res.linked;
+	}
+
+	var counts = {
+		odd: 0,
+		even: 0,
+		total: 0,
+		small: {
+			odd: 0,
+			even: 0,
+			total: 0
+		}
+	};
+
+	var small = 5;
+	for(var v in regions) {
+		var region = regions[v];
+		var region_len = region.length;
+
+		if(region_len%2 === 0) {
+			counts.even += 1;
+
+			if(region_len <= small) {
+				counts.small.even += 1;
+			}
+		} else {
+			counts.odd += 1;
+			if(region_len <= small) {
+				counts.small.odd += 1;
+			}
+		}
+
+		counts.total += 1;
+		if(region_len <= small) {
+			counts.small.total += 1;
+		}
+
+	}
+
+	return counts;
+};
+
+Game.prototype.get_frontier_counts = function() {
+	var counts = {
+		0: 0,
+		1: 0
+	};
+
+	for(var i = 0; i < this.board.length; i++) {
+		var xy = this.get_xy(i);
+		var x = xy.x, y = xy.y;
+		var disk = this.tile(x,y);
+
+		if(disk === null)
+			continue;
+
+		var results =this.explore_directions(x, y, disk, null, null, 
+			(function(mx,my,disk,ours) {
+
+				// A disk is only on the frontier if one of the tiles touching it is empty.
+				if(disk === null)
+					return true;
+				else
+					return false;
+			})
+		);
+
+		// If any edge touches an empty tile, this tile is on the frontier for the player.
+		if(results.n || results.s || results.e || results.w || results.ne || results.sw || results.nw || results.se) {
+
+			counts[disk] += 1;
+		}
+	}
+
+	return counts;
+};
 
 Game.prototype.inactive_player = function() {
 	return this.other_player(this.active_player);
@@ -437,4 +741,75 @@ Game.prototype.dup = function() {
 	new_game.set_internal_state(this.get_internal_state());
 	new_game.player_controllers = [null,null];
 	return new_game;
+};
+
+Game.prototype.load_board = function(board) {
+	var board_arr = board.split(",");
+
+	for(var i = 0; i < board_arr.length; i++) {
+		var xy = this.get_xy(i);
+		var value = parseInt(board_arr[i]);
+
+		if(isNaN(value)) {
+			value = null;
+		}
+
+		this.tile(xy.x, xy.y,  value);
+	}
+	this.advance_board();
+	this.next_turn();
+};
+
+Game.prototype.board_permutations = function() {
+ 	return [
+ 		this.board,
+ 		this.board_180deg(),
+ 		this.board_flip_h(),
+ 		this.board_flip_v()
+ 	]
+};
+
+Game.prototype.board_180deg = function() {
+	var b180 = [];
+	for(var i = 0; i < this.board.length/2; i++) {
+		var op_i = this.board.length - 1 - i;
+		b180[i] = this.board[op_i];
+		b180[op_i] = this.board[i];
+	}
+
+	return b180;
+};
+
+Game.prototype.board_flip_h = function() {
+	var bfh = [];
+	for(var i = 0; i < this.board.length; i++) {
+		var xy = this.get_xy(i);
+		var x = xy.x;
+		var y = xy.y;
+
+		var op_x = y;
+		var op_y = x;
+
+		bfh[i] = this.tile(y,x);
+		bfh[this.get_index(y,x)] = this.tile(x,y);
+	}
+
+	return bfh;
+};
+
+Game.prototype.board_flip_v = function() {
+	var bfv = [];
+	for(var i = 0; i < this.board.length; i++) {
+		var xy = this.get_xy(i);
+		var x = xy.x;
+		var y = xy.y;
+
+		var op_x = this.board_size-1-y;
+		var op_y = this.board_size-1-x;
+
+		bfv[i] = this.tile(op_x,op_y);
+		bfv[this.get_index(op_x,op_y)] = this.tile(x,y);
+	}
+
+	return bfv;
 };

@@ -11,7 +11,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 20141202203820) do
+ActiveRecord::Schema.define(version: 20141221214919) do
 
   # These are extensions that must be enabled in order to support this database
   enable_extension "plpgsql"
@@ -43,5 +43,27 @@ ActiveRecord::Schema.define(version: 20141202203820) do
   add_index "match_results", ["p1_controller_id"], name: "index_match_results_on_p1_controller_id", using: :btree
   add_index "match_results", ["p1_disks"], name: "index_match_results_on_p1_disks", using: :btree
   add_index "match_results", ["winner"], name: "index_match_results_on_winner", using: :btree
+
+  create_table "move_preformances", force: true do |t|
+    t.integer  "move",             limit: 2
+    t.integer  "time",             limit: 8
+    t.integer  "controller_id"
+    t.integer  "match_result"
+    t.boolean  "verification_run"
+    t.integer  "verification_set"
+    t.integer  "player",           limit: 2
+    t.datetime "created_at"
+    t.datetime "updated_at"
+    t.integer  "valid_moves"
+  end
+
+  add_index "move_preformances", ["controller_id"], name: "index_move_preformances_on_controller_id", using: :btree
+  add_index "move_preformances", ["match_result"], name: "index_move_preformances_on_match_result", using: :btree
+  add_index "move_preformances", ["move"], name: "index_move_preformances_on_move", using: :btree
+  add_index "move_preformances", ["player"], name: "index_move_preformances_on_player", using: :btree
+  add_index "move_preformances", ["time"], name: "index_move_preformances_on_time", using: :btree
+  add_index "move_preformances", ["valid_moves"], name: "index_move_preformances_on_valid_moves", using: :btree
+  add_index "move_preformances", ["verification_run"], name: "index_move_preformances_on_verification_run", using: :btree
+  add_index "move_preformances", ["verification_set"], name: "index_move_preformances_on_verification_set", using: :btree
 
 end
